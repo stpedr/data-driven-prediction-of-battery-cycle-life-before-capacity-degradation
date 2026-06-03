@@ -1,0 +1,417 @@
+\documentclass[12pt, a4paper]{article}
+
+% --- Pacotes ---
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[brazil]{babel}
+\usepackage{geometry}
+\usepackage{setspace}
+\usepackage{graphicx}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{hyperref}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{caption}
+\usepackage{subcaption}
+\usepackage{cite}
+\usepackage{indentfirst}
+\usepackage{xcolor}
+\usepackage{fancyhdr}
+\usepackage{titlesec}
+\usepackage{abstract}
+
+\geometry{
+  left=3cm,
+  right=2cm,
+  top=3cm,
+  bottom=2cm
+}
+
+\onehalfspacing
+
+% --- Cabeçalho e rodapé ---
+\pagestyle{fancy}
+\fancyhf{}
+\rhead{\small Previsão de Vida Útil de Baterias}
+\lhead{\small Resenha de Artigo Científico}
+\cfoot{\thepage}
+
+% --- Formatação de títulos ---
+\titleformat{\section}{\large\bfseries}{\thesection}{1em}{}
+\titleformat{\subsection}{\normalsize\bfseries}{\thesubsection}{1em}{}
+
+\hypersetup{
+  colorlinks=true,
+  linkcolor=blue!70!black,
+  citecolor=blue!70!black,
+  urlcolor=blue!70!black
+}
+
+% ================================================================
+\begin{document}
+
+% --- Capa ---
+\begin{titlepage}
+  \centering
+  \vspace*{2cm}
+
+  {\Large \textbf{Universidade --- Programa de Pós-Graduação}}\\[0.5cm]
+  {\large Doutorado em Engenharia / Área de Concentração}\\
+
+  \vspace{3cm}
+
+  {\LARGE \textbf{Resenha Crítica de Artigo Científico}}\\[1cm]
+
+  {\Large \textit{Data-Driven Prediction of Battery Cycle Life\\
+  Before Capacity Degradation}}\\[0.5cm]
+
+  {\large Severson, Attia \textit{et al.} --- \textit{Nature Energy}, 2019}
+
+  \vspace{3cm}
+
+  \begin{flushright}
+    \textbf{Autor(a):} Pedro Lievra\\[0.3cm]
+    \textbf{E-mail:} \href{mailto:pedrolievra@gmail.com}{pedrolievra@gmail.com}\\[0.3cm]
+    \textbf{Orientador(a):} [Nome do Orientador]\\[0.3cm]
+    \textbf{Data:} Junho de 2026
+  \end{flushright}
+
+  \vfill
+  {\small Documento gerado para fins acadêmicos de doutorado.}
+\end{titlepage}
+
+% --- Resumo ---
+\begin{abstract}
+  \noindent
+  Esta resenha analisa o artigo \textit{``Data-Driven Prediction of Battery
+  Cycle Life Before Capacity Degradation''} publicado na revista
+  \textit{Nature Energy} em 2019 por Severson, Attia e colaboradores. O
+  trabalho propõe uma abordagem de aprendizado de máquina capaz de prever
+  quantitativamente a vida útil de baterias de íon-lítio a partir dos
+  ciclos iniciais de operação --- muito antes de qualquer degradação visível
+  de capacidade. São discutidos o contexto do problema, a construção do
+  conjunto de dados, as limitações das features convencionais baseadas em
+  capacidade de descarga e a motivação para o uso de curvas de tensão
+  diferencial como variável preditora. A análise cobre o artigo até o
+  tópico \textit{Machine-Learning Approach}, incluindo a descrição das
+  figuras relevantes.
+
+  \medskip
+  \noindent\textbf{Palavras-chave:} baterias de íon-lítio, previsão de vida
+  útil, aprendizado de máquina, degradação eletroquímica, fast-charging, LFP.
+\end{abstract}
+
+\newpage
+\tableofcontents
+\newpage
+
+% ================================================================
+\section{Introdução e Contextualização}
+
+Baterias de íon-lítio são componentes críticos em uma vasta gama de
+aplicações modernas: veículos elétricos, dispositivos portáteis e sistemas
+de armazenamento de energia em larga escala. Nessas aplicações, a vida útil
+da bateria --- tipicamente definida como o número de ciclos de carga e
+descarga até que a capacidade caia para 80\% do valor nominal --- é um
+parâmetro de projeto fundamental \cite{severson2019}.
+
+A principal dificuldade em prever esse parâmetro reside na natureza da
+degradação: ela é eletroquimicamente não-linear, fortemente dependente das
+condições operacionais (temperatura, protocolo de carga, profundidade de
+descarga) e praticamente \emph{imperceptível} nos ciclos iniciais. Em
+termos práticos, isso significa que o feedback sobre o desempenho real de
+uma bateria só se materializa após meses ou anos de uso --- um obstáculo
+severo para o desenvolvimento acelerado de novos materiais e protocolos de
+carregamento.
+
+Trabalhos anteriores de aprendizado de máquina aplicados a baterias
+esbarravam nessa limitação. De modo geral, previsões confiáveis exigiam
+dados correspondentes a pelo menos 25\% do caminho até a falha, ou então
+dependiam de medições especializadas e de difícil obtenção em campo
+\cite{severson2019}. Harris \textit{et al.}, por exemplo, relataram
+correlação muito fraca ($\rho = 0{,}1$) entre a capacidade no ciclo 80 e a
+capacidade no ciclo 500, evidenciando que as features mais óbvias não
+carregam informação preditiva suficiente nos estágios iniciais.
+
+O artigo de Severson, Attia \textit{et al.} \cite{severson2019} apresenta
+uma resposta a esse desafio: demonstra que é possível prever a vida útil
+quantitativamente com \textbf{9,1\% de erro de teste} usando dados dos
+primeiros 100 ciclos, período em que a variação mediana de capacidade das
+células é de apenas $+0{,}2\%$ em relação ao valor inicial. Adicionalmente,
+uma tarefa de classificação binária (vida curta vs.\ vida longa) atinge
+\textbf{4,9\% de erro} utilizando apenas os primeiros 5 ciclos. A chave
+para esses resultados é o uso de curvas de voltagem diferenciais ao invés
+da capacidade de descarga simples.
+
+% ================================================================
+\section{O Conjunto de Dados}
+
+\subsection{Células e Protocolo Experimental}
+
+Para viabilizar o estudo, os autores conduziram um experimento controlado em
+larga escala. Foram cicladas \textbf{124 células comerciais} do modelo
+A123~APR18650M1A (química LFP/grafite, capacidade nominal 1,1~Ah), todas
+nominalmente idênticas. As células foram submetidas a \textbf{72 protocolos
+de carregamento rápido} (\textit{fast-charging}) distintos, com taxas de
+corrente variando de 3,6C a 6C e com descargas todas idênticas a 4C até
+2,0~V. Todas as células foram mantidas em câmara climatizada a 30~°C.
+
+\subsection{Características do Dataset}
+
+O resultado é o maior conjunto de dados público de baterias comerciais
+nominalmente idênticas cicladas sob condições controladas até a data de
+publicação. As principais características estão sumarizadas na
+Tabela~\ref{tab:dataset}.
+
+\begin{table}[ht]
+  \centering
+  \caption{Características do dataset de Severson \textit{et al.} (2019).}
+  \label{tab:dataset}
+  \begin{tabular}{lc}
+    \toprule
+    \textbf{Característica} & \textbf{Valor} \\
+    \midrule
+    Total de células             & 124 \\
+    Lotes (\textit{batches})     & 3 (46, 48 e 45 células) \\
+    Total de ciclos acumulados   & $\approx$ 96.700 \\
+    Vida útil mínima             & $\sim$150 ciclos \\
+    Vida útil máxima             & $\sim$2.300 ciclos \\
+    Vida útil média              & 806 ciclos \\
+    Desvio-padrão da vida útil   & 377 ciclos \\
+    Temperatura de operação      & 30~°C \\
+    Critério de fim de vida (EOL)& 80\% da capacidade nominal \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+A ampla variabilidade nas vidas úteis (de $\sim$150 a $\sim$2.300 ciclos,
+fator $\approx$15) sob condições controladas é notável e sublinha a
+sensibilidade do processo de degradação às condições de carga, mesmo entre
+células nominalmente idênticas. Esse espectro amplo é justamente o que torna
+o problema interessante e o dataset valioso para o treinamento de modelos
+preditivos.
+
+\subsection{Estrutura dos Dados}
+
+Para cada célula, o dataset registra três categorias de dados:
+
+\begin{itemize}
+  \item \textbf{Descritores:} política de carregamento, vida útil medida,
+  código de barras e canal do equipamento.
+
+  \item \textbf{Dados de resumo por ciclo (\textit{summary}):} capacidade
+  de descarga ($Q_D$), capacidade de carga ($Q_C$), resistência interna
+  (IR), temperaturas (máxima, média e mínima) e tempo de carga até 80\%
+  do estado de carga (SOC).
+
+  \item \textbf{Dados dentro do ciclo (\textit{cycle data}):} séries
+  temporais de corrente ($I$), voltagem ($V$), temperatura ($T$),
+  capacidades acumuladas de carga e descarga, e a curva diferencial
+  $dQ/dV$ durante a descarga.
+\end{itemize}
+
+% ================================================================
+\section{Limitações das Features Baseadas em Capacidade}
+
+\subsection{Motivação para uma Abordagem Alternativa}
+
+A seção mais ilustrativa da primeira parte do artigo investiga por que a
+medida mais natural --- a capacidade de descarga --- falha como preditor de
+vida útil nos ciclos iniciais.
+
+Os autores calcularam o coeficiente de correlação de Pearson ($\rho$) entre
+o logaritmo da vida útil e três features derivadas da curva de capacidade:
+
+\begin{enumerate}
+  \item \textbf{Capacidade de descarga no ciclo 2:} $\rho = -0{,}06$
+  (essencialmente sem correlação).
+  \item \textbf{Capacidade de descarga no ciclo 100:} $\rho = 0{,}27$
+  (correlação fraca).
+  \item \textbf{Inclinação da curva de capacidade nos ciclos 95--100:}
+  $\rho = 0{,}47$ (melhor resultado, mas ainda modesto).
+\end{enumerate}
+
+Nenhuma dessas features oferece poder preditivo suficiente. Este resultado
+é central para o argumento do artigo: a informação relevante sobre o
+mecanismo de degradação não está exposta na curva de capacidade durante os
+ciclos iniciais.
+
+\subsection{O Fenômeno de Aumento de Capacidade}
+
+Um resultado contraintuitivo reportado pelos autores é que, em
+\textbf{81\% das células}, a capacidade de descarga no ciclo 100 é
+\emph{maior} do que no ciclo 2. Esse comportamento é atribuído ao fenômeno
+de redistribuição de carga: parte da capacidade nominalmente armazenada na
+região do eletrodo negativo que se estende além dos limites do positivo
+(\textit{overhang}) gradualmente se equaliza durante os ciclos iniciais,
+elevando aparentemente a capacidade útil.
+
+Esse efeito mascara a degradação real que está ocorrendo em escala
+microscópica (formação e crescimento da camada de interface sólido-eletrolítica,
+SEI; perda de lítio ciclável), tornando a capacidade de descarga um proxy
+enganoso nos primeiros ciclos.
+
+% ================================================================
+\section{Descrição das Figuras (até a abordagem de ML)}
+
+\subsection{Figura 1 --- Baixo Poder Preditivo das Features de Capacidade}
+
+A Figura~1 do artigo sintetiza visualmente os argumentos da Seção~3 desta
+resenha. Ela é composta por seis painéis (a--f), todos com a codificação de
+cor consistente utilizada no restante do artigo: cores mais escuras
+(azul/roxo) representam células de vida longa; cores mais claras
+(amarelo/vermelho) representam células de vida curta.
+
+\paragraph{Painel (a) --- Capacidade de descarga vs.\ número de ciclo
+(primeiros 1.000 ciclos).}
+Exibe as curvas de capacidade de descarga para todas as 124 células ao
+longo dos primeiros 1.000 ciclos. O comportamento clássico de degradação de
+baterias LFP é evidente: a capacidade permanece relativamente estável por
+um longo período e depois cai abruptamente próximo ao fim de vida
+(\textit{``knee point''}). O aspecto mais importante é o entrelaçamento
+das curvas: células que iniciam com maior capacidade não necessariamente
+vivem mais, e vice-versa. Isso já antecipa visualmente a baixa correlação
+quantificada nos painéis seguintes.
+
+\paragraph{Painel (b) --- Zoom dos primeiros 100 ciclos.}
+Ampliação do painel (a) restrita ao intervalo de 0 a 100 ciclos. As curvas
+estão completamente misturadas numa faixa estreita, sem qualquer separação
+visual entre células de vida curta e longa. É o argumento visual mais direto
+para a impossibilidade de prever a vida útil usando apenas a trajetória de
+capacidade nesse intervalo.
+
+\paragraph{Painel (c) --- Histograma da razão de capacidade (ciclo 100 /
+ciclo 2).}
+A linha pontilhada vertical em 1,00 divide as células entre aquelas que
+ganharam e aquelas que perderam capacidade até o ciclo 100. A grande maioria
+das células está à direita de 1,00 (ganho de capacidade), ilustrando o
+fenômeno de aumento de capacidade discutido anteriormente. Uma célula
+com razão $\approx 0{,}90$ foi excluída da visualização para melhor
+resolução do histograma.
+
+\paragraph{Painéis (d), (e) e (f) --- Gráficos de dispersão: vida útil
+vs.\ features de capacidade.}
+Esses três painéis apresentam, em escala logarítmica no eixo $y$, a
+correlação entre a vida útil e cada uma das três features:
+
+\begin{itemize}
+  \item[(d)] Capacidade no ciclo 2: nuvem de pontos sem tendência ($\rho = -0{,}06$).
+  \item[(e)] Capacidade no ciclo 100: tendência ligeiramente positiva ($\rho = 0{,}27$).
+  \item[(f)] Inclinação da capacidade entre os ciclos 95--100
+  (mAh/ciclo): correlação moderada ($\rho = 0{,}47$), a melhor
+  entre as três, mas ainda insuficiente para previsão confiável.
+\end{itemize}
+
+A progressão $(\text{d}) \to (\text{e}) \to (\text{f})$ demonstra que,
+mesmo tentando extrair features mais sofisticadas da curva de capacidade, o
+poder preditivo permanece baixo. Essa limitação fundamenta a necessidade de
+uma feature alternativa: a curva diferencial de capacidade $\Delta Q(V)$,
+apresentada na seção de aprendizado de máquina do artigo.
+
+% ================================================================
+\section{Considerações sobre a Metodologia Experimental}
+
+\subsection{Pontos Fortes do Delineamento}
+
+O delineamento experimental adotado apresenta características que elevam
+significativamente a relevância científica dos resultados:
+
+\begin{itemize}
+  \item \textbf{Controle de variáveis confundidoras:} ao utilizar células
+  nominalmente idênticas, temperatura constante e protocolo de descarga
+  uniforme, os autores isolam o efeito do protocolo de carga como fonte
+  de variabilidade nas vidas úteis.
+
+  \item \textbf{Escala do dataset:} 96.700 ciclos acumulados constitui um
+  dataset de magnitude incomum em pesquisa de baterias, onde experimentos
+  são caros e demorados.
+
+  \item \textbf{Reprodutibilidade:} os dados foram disponibilizados
+  publicamente em \url{https://data.matr.io/1/}, permitindo validação
+  independente e reutilização por outros grupos.
+
+  \item \textbf{Separação clara de conjuntos de treino/teste:} os autores
+  definiram o split treino/teste de forma explícita e replicável (células
+  ímpares dos Lotes 1 e 2 para teste; todas as células do Lote 3 como
+  conjunto de teste secundário).
+\end{itemize}
+
+\subsection{Limitações e Perspectivas}
+
+Apesar dos resultados expressivos, algumas limitações merecem menção:
+
+\begin{itemize}
+  \item O dataset utiliza apenas uma química de eletrodo (LFP/grafite) e
+  uma geometria de célula (cilíndrica 18650). A generalização para NMC,
+  NCA ou células de formato \textit{pouch} requer validação adicional.
+
+  \item O código de modelagem preditiva está sob licença acadêmica
+  restrita (contato: braatz@mit.edu), o que limita a reprodutibilidade
+  plena dos resultados de aprendizado de máquina.
+
+  \item O ambiente controlado (30~°C, câmara climática) pode não capturar
+  a variabilidade térmica de aplicações reais, onde flutuações de
+  temperatura são relevantes para a degradação.
+\end{itemize}
+
+% ================================================================
+\section{Conclusão Parcial}
+
+Até o ponto ``Machine-Learning Approach'', o artigo de Severson \textit{et
+al.} constrói um argumento rigoroso e bem fundamentado: a capacidade de
+descarga, a métrica mais intuitiva para acompanhar o estado de saúde de uma
+bateria, é um preditor \emph{fraco} durante os ciclos iniciais. O
+aumento de capacidade observado em 81\% das células nos primeiros 100 ciclos
+é uma evidência concreta de que fenômenos de redistribuição interna de carga
+mascaram a degradação real.
+
+O dataset construído para o estudo --- 124 células, $\sim$96.700 ciclos,
+disponível publicamente --- representa por si só uma contribuição
+significativa para a comunidade científica. A análise das correlações entre
+features de capacidade e vida útil ($\rho$ máximo de 0,47) demonstra
+quantitativamente a necessidade de uma abordagem diferente, pavimentando o
+caminho para a feature $\Delta Q(V)$ e o modelo de aprendizado de máquina
+que são discutidos na sequência do artigo.
+
+Os resultados finais (9,1\% de erro para previsão quantitativa com 100
+ciclos; 4,9\% para classificação binária com apenas 5 ciclos) representam
+um avanço substancial em relação ao estado da arte e têm implicações diretas
+para o desenvolvimento de protocolos de fast-charging, gerenciamento de
+baterias e avaliação de degradação em tempo real.
+
+% ================================================================
+\section*{Referências}
+\addcontentsline{toc}{section}{Referências}
+
+\begin{thebibliography}{9}
+
+\bibitem{severson2019}
+Severson, K.~A., Attia, P.~M., Jin, N., Perkins, N., Jiang, B.,
+Yang, Z., Chen, M.~H., Aykol, M., Herring, P.~K., Fraggedakis, D.,
+Bazant, M.~Z., Harris, S.~J., Chueh, W.~C., \& Braatz, R.~D. (2019).
+\textit{Data-driven prediction of battery cycle life before capacity
+degradation.}
+\textit{Nature Energy}, 4(5), 383--391.
+\url{https://doi.org/10.1038/s41560-019-0356-8}
+
+\bibitem{harris2017}
+Harris, S.~J., Harris, D.~J., \& Li, C. (2017).
+\textit{Failure statistics for commercial lithium ion batteries: A study
+of 24 pouch cells.}
+\textit{Journal of Power Sources}, 342, 589--597.
+
+\bibitem{plett2015}
+Plett, G.~L. (2015).
+\textit{Battery Management Systems, Volume I: Battery Modeling.}
+Artech House.
+
+\bibitem{birkl2017}
+Birkl, C.~R., Roberts, M.~R., McTurk, E., Bruce, P.~G., \& Howey, D.~A.
+(2017).
+\textit{Degradation diagnostics for lithium ion cells.}
+\textit{Journal of Power Sources}, 341, 373--386.
+
+\end{thebibliography}
+
+\end{document}
