@@ -6,4 +6,10 @@ Data/
 
 #ignore jupyter notebook files
 .ipynb_checkpoints/
-__pycache__/
+__pycache__/*.aux
+*.log
+*.out
+*.toc
+*.synctex.gz
+*.fls
+*.fdb_latexmk
