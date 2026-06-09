@@ -1,0 +1,513 @@
+\documentclass[12pt,a4paper]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[brazil]{babel}
+\usepackage{geometry}
+\usepackage{graphicx}
+\usepackage{amsmath}
+\usepackage{booktabs}
+\usepackage{hyperref}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{float}
+\usepackage{enumitem}
+\usepackage{titlesec}
+\usepackage{parskip}
+\usepackage{fancyhdr}
+\usepackage{caption}
+\usepackage{subcaption}
+
+\geometry{
+  top=2.5cm,
+  bottom=2.5cm,
+  left=3cm,
+  right=2.5cm
+}
+
+\hypersetup{
+  colorlinks=true,
+  linkcolor=blue!70!black,
+  urlcolor=blue!70!black,
+  citecolor=blue!70!black
+}
+
+\lstdefinestyle{matlab}{
+  language=Matlab,
+  basicstyle=\ttfamily\small,
+  keywordstyle=\color{blue}\bfseries,
+  commentstyle=\color{green!60!black},
+  stringstyle=\color{red!70!black},
+  numberstyle=\tiny\color{gray},
+  numbers=left,
+  stepnumber=1,
+  frame=single,
+  breaklines=true,
+  captionpos=b
+}
+
+\lstdefinestyle{python}{
+  language=Python,
+  basicstyle=\ttfamily\small,
+  keywordstyle=\color{blue}\bfseries,
+  commentstyle=\color{green!60!black},
+  stringstyle=\color{red!70!black},
+  numberstyle=\tiny\color{gray},
+  numbers=left,
+  stepnumber=1,
+  frame=single,
+  breaklines=true,
+  captionpos=b
+}
+
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small Previs\~ao da Vida \'{U}til de Baterias}
+\fancyhead[R]{\small\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+
+\title{
+  \vspace{-1cm}
+  {\large Relat\'{o}rio T\'{e}cnico} \\[0.5em]
+  \textbf{Previs\~ao Orientada a Dados da Vida \'{U}til de Baterias\\
+  Antes da Degrada\c{c}\~ao de Capacidade} \\[0.5em]
+  {\normalsize Reposit\'{o}rio: \texttt{data-driven-prediction-of-battery-cycle-life-before-capacity-degradation}}
+}
+\author{Pedro Lievra}
+\date{Junho de 2026}
+
+\begin{document}
+
+\maketitle
+\thispagestyle{fancy}
+
+\tableofcontents
+\newpage
+
+%--------------------------------------------------------------------------
+\section{Introdu\c{c}\~ao}
+
+Este relat\'{o}rio documenta o trabalho realizado no reposit\'{o}rio
+\texttt{data-driven-prediction-of-battery-cycle-life-before-capacity-degradation},
+que disponibiliza o c\'{o}digo de processamento de dados associado ao artigo
+cient\'{i}fico publicado na \emph{Nature Energy} (2019):
+
+\begin{quote}
+\textit{K.A. Severson, P.M. Attia et al., ``Data-Driven Prediction of Battery
+Cycle Life Before Capacity Degradation'', Nature Energy, 2019.}
+\end{quote}
+
+O objetivo central do trabalho \'{e} demonstrar como prever a vida \'{u}til de baterias de
+\'{i}ons de l\'{i}tio --- medida pelo n\'{u}mero de ciclos de carga/descarga at\'{e} a degrada\c{c}\~ao
+cr\'{i}tica da capacidade --- utilizando apenas dados coletados nos primeiros ciclos de
+opera\c{c}\~ao. A abordagem \'{e} totalmente orientada a dados (\textit{data-driven}), n\~ao
+dependendo de modelos f\'{i}sico-qu\'{i}micos expl\'{i}citos.
+
+\textbf{Nota:} O c\'{o}digo de modelagem preditiva est\'{a} sujeito a licen\c{c}a acad\^{e}mica e
+dispon\'{i}vel mediante contato com Richard Braatz (\texttt{braatz@mit.edu}). Este
+repositório publica apenas o código de processamento dos dados.
+
+%--------------------------------------------------------------------------
+\section{Conjunto de Dados}
+
+\subsection{Origem e Disponibilidade}
+
+Os dados foram coletados no MIT e est\~ao publicamente dispon\'{i}veis em
+\url{https://data.matr.io/1/}. O conjunto cont\'{e}m medi\c{c}\~oes de baterias cil\'{i}ndricas
+de \'{i}ons de l\'{i}tio (LFP/grafite, A123 Systems APR18650M1A, 1{,}1\,Ah nominais)
+submetidas a diferentes pol\'{i}ticas de carga r\'{a}pida.
+
+\subsection{Estrutura em Tr\^{e}s Lotes (\textit{Batches})}
+
+Os dados est\~ao divididos em tr\^{e}s lotes coletados em per\'{i}odos distintos:
+
+\begin{table}[H]
+\centering
+\caption{Resumo dos tr\^{e}s lotes de dados}
+\begin{tabular}{@{}lllp{6cm}@{}}
+\toprule
+\textbf{Lote} & \textbf{Arquivo} & \textbf{Data} & \textbf{Descri\c{c}\~ao} \\
+\midrule
+Batch 1 & \texttt{2017-05-12\_batchdata\_...} & Mai/2017 &
+  Primeiro conjunto de baterias; 5 c\'{e}lulas continuam no Batch~2 \\
+Batch 2 & \texttt{2017-06-30\_batchdata\_...} & Jun/2017 &
+  Continua\c{c}\~ao do Batch~1 para algumas c\'{e}lulas; c\'{e}lulas adicionais \\
+Batch 3 & \texttt{2018-04-12\_batchdata\_...} & Abr/2018 &
+  Terceiro conjunto; inclui c\'{e}lulas com pol\'{i}ticas de carga vari\'{a}vel \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Categorias de Dados por C\'{e}lula}
+
+Cada bateria (\textit{cell}) possui dados agrupados em tr\^{e}s categorias:
+
+\begin{description}[leftmargin=2cm, style=nextline]
+  \item[Descritores (\textit{Descriptors})]
+    Pol\'{i}tica de carregamento (\textit{charging policy}), vida \'{u}til em ciclos
+    (\textit{cycle life}), c\'{o}digo de barras (\textit{barcode}) e canal de teste
+    (\textit{channel}).
+
+  \item[Dados de Resumo (\textit{Summary})]
+    Informa\c{c}\~oes por ciclo: n\'{u}mero do ciclo, capacidade de descarga
+    ($Q_\text{discharge}$), capacidade de carga ($Q_\text{charge}$), resist\^{e}ncia
+    interna (IR), temperatura m\'{a}xima ($T_\text{max}$), temperatura m\'{e}dia
+    ($T_\text{avg}$), temperatura m\'{i}nima ($T_\text{min}$) e tempo de carregamento
+    (\textit{chargetime}).
+
+  \item[Dados de Ciclo (\textit{Cycle})]
+    Medi\c{c}\~oes dentro de cada ciclo: tempo, capacidade de carga/descarga, corrente,
+    tens\~ao, temperatura. Inclui tamb\'{e}m vetores derivados:
+    \begin{itemize}
+      \item \textbf{discharge\_dQ/dV}: diferencial de capacidade (dQ/dV) durante
+        a descarga;
+      \item \textbf{Qdlin}: capacidade de descarga interpolada linearmente em
+        tens\~ao;
+      \item \textbf{Tdlin}: temperatura interpolada linearmente em tens\~ao.
+    \end{itemize}
+\end{description}
+
+%--------------------------------------------------------------------------
+\section{Implementa\c{c}\~ao}
+
+O reposit\'{o}rio fornece implementa\c{c}\~oes em duas linguagens: MATLAB (implementa\c{c}\~ao
+original da an\'{a}lise) e Python (porta para acessibilidade ampliada).
+
+\subsection{Arquivos do Reposit\'{o}rio}
+
+\begin{table}[H]
+\centering
+\caption{Arquivos presentes no reposit\'{o}rio}
+\begin{tabular}{@{}lp{9cm}@{}}
+\toprule
+\textbf{Arquivo} & \textbf{Descri\c{c}\~ao} \\
+\midrule
+\texttt{LoadData.m}         & Script MATLAB principal de carregamento e
+                               pr\'{e}-processamento dos dados \\
+\texttt{EC\_dQdV.m}         & Fun\c{c}\~ao MATLAB para c\'{a}lculo diferencial de capacidade
+                               (dQ/dV) \\
+\texttt{EC\_dVdQ.m}         & Fun\c{c}\~ao MATLAB para c\'{a}lculo diferencial de tens\~ao
+                               (dV/dQ) \\
+\texttt{Figure4\_mac.m}     & Script MATLAB para gera\c{c}\~ao das figuras diagn\'{o}sticas
+                               (Figura 4/5 do artigo) \\
+\texttt{BuildPkl\_Batch1.ipynb} & Notebook Python para constru\c{c}\~ao do arquivo
+                               \texttt{.pkl} do Batch~1 \\
+\texttt{BuildPkl\_Batch2.ipynb} & Notebook Python para constru\c{c}\~ao do arquivo
+                               \texttt{.pkl} do Batch~2 \\
+\texttt{BuildPkl\_Batch3.ipynb} & Notebook Python para constru\c{c}\~ao do arquivo
+                               \texttt{.pkl} do Batch~3 \\
+\texttt{Load Data.ipynb}    & Notebook Python demonstrando o carregamento dos
+                               dados \texttt{.pkl} \\
+\texttt{requirements.txt}   & Depend\^{e}ncias Python do projeto \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Depend\^{e}ncias Python}
+
+\begin{table}[H]
+\centering
+\caption{Depend\^{e}ncias do ambiente Python}
+\begin{tabular}{@{}ll@{}}
+\toprule
+\textbf{Biblioteca} & \textbf{Vers\~ao} \\
+\midrule
+Python   & 3.7.10 \\
+NumPy    & 1.22.0 \\
+Pandas   & 1.2.3  \\
+SciPy    & 1.6.1  \\
+Matplotlib & 3.3.4 \\
+h5py     & 2.8.0  \\
+Jupyter  & (\'{u}ltima dispon\'{i}vel) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Para criar o ambiente com Conda:
+\begin{lstlisting}[language=bash, numbers=none, caption={Cria\c{c}\~ao do ambiente conda}]
+conda create --name battery_env --file requirements.txt
+\end{lstlisting}
+
+%--------------------------------------------------------------------------
+\section{Pipeline de Processamento dos Dados}
+
+\subsection{Carregamento e Mesclagem dos Lotes (MATLAB)}
+
+O script \texttt{LoadData.m} executa as etapas a seguir.
+
+\subsubsection{Carregamento do Batch 1}
+
+\begin{lstlisting}[style=matlab, caption={Carregamento do primeiro lote}]
+load('.\Data\2017-05-12_batchdata_updated_struct_errorcorrect')
+batch1 = batch;
+numBat1 = size(batch1,2);
+\end{lstlisting}
+
+\subsubsection{Mesclagem de C\'{e}lulas Continuadas do Batch 2 ao Batch 1}
+
+Cinco c\'{e}lulas do Batch~1 continuaram sendo cicladas no Batch~2. Seus dados
+s\~ao concatenados antes do processamento:
+
+\begin{lstlisting}[style=matlab, caption={Concatena\c{c}\~ao de ciclos entre lotes}]
+add_len = [661, 980, 1059, 207, 481];
+batch2_idx = [8:10, 16:17];
+for i = 1:5
+    batch1(i).cycles(end+1:end+add_len(i)+1) = ...
+        batch(batch2_idx(i)).cycles;
+    % ... (campos de summary tambem concatenados)
+end
+\end{lstlisting}
+
+\subsubsection{Filtragem e Limpeza do Batch 3}
+
+O Batch~3 requer etapas adicionais de limpeza de dados:
+
+\begin{enumerate}
+  \item Remo\c{c}\~ao do canal~46 (canal~38 no array 0-indexado), que apresentou
+    problemas na coleta;
+  \item Remo\c{c}\~ao de c\'{e}lulas que n\~ao completaram a degrada\c{c}\~ao abaixo de
+    $Q < 0{,}885$\,Ah ao final do teste;
+  \item Remo\c{c}\~ao das baterias ruidosas do Batch~8 (\'{i}ndices 3, 40 e 41).
+\end{enumerate}
+
+\begin{lstlisting}[style=matlab, caption={Filtragem do Batch 3}]
+batch3(38) = [];   % canal 46 com problema de coleta
+endcap3 = zeros(numBat3,1);
+for i = 1:numBat3
+    endcap3(i) = batch3(i).summary.QDischarge(end);
+end
+rind = find(endcap3 > 0.885);
+batch3(rind) = [];
+
+nind = [3, 40:41]; % baterias ruidosas
+batch3(nind) = [];
+\end{lstlisting}
+
+\subsubsection{Combina\c{c}\~ao Final}
+
+Os tr\^{e}s lotes s\~ao combinados em um \'{u}nico array e c\'{e}lulas que n\~ao finalizaram
+os testes no Batch~1 s\~ao opcionalmente removidas:
+
+\begin{lstlisting}[style=matlab, caption={Combina\c{c}\~ao dos lotes}]
+batch_combined = [batch1, batch2, batch3];
+batch_combined([9,11,13,14,23]) = []; % celulas incompletas do Batch 1
+\end{lstlisting}
+
+\subsection{Vari\'{a}vel de Sa\'{i}da --- Vida \'{U}til em Ciclos}
+
+A vari\'{a}vel de sa\'{i}da do modelo \'{e} o n\'{u}mero de ciclos at\'{e} a capacidade de descarga
+atingir o limiar de 0{,}88\,Ah (aproximadamente 80\% da capacidade nominal):
+
+\begin{lstlisting}[style=matlab, caption={Extra\c{c}\~ao da vari\'{a}vel alvo}]
+bat_label = zeros(numBat,1);
+for i = 1:numBat
+    if batch_combined(i).summary.QDischarge(end) < 0.88
+        bat_label(i) = find( ...
+            batch_combined(i).summary.QDischarge < 0.88, 1);
+    else
+        bat_label(i) = size(batch_combined(i).cycles,2) + 1;
+    end
+end
+\end{lstlisting}
+
+Esse crit\'{e}rio define a ``vida \'{u}til'' de forma objetiva e padronizada, permitindo
+compara\c{c}\~oes diretas entre c\'{e}lulas com diferentes pol\'{i}ticas de carregamento.
+
+\subsection{Divis\~ao Treino/Teste}
+
+A divis\~ao segue o protocolo descrito no artigo original:
+
+\begin{lstlisting}[style=matlab, caption={Divis\~ao treino/teste}]
+test_ind  = [1:2:(numBat1+numBat2), 84];
+train_ind = 1:(numBat1+numBat2);
+train_ind(test_ind) = [];
+secondary_test_ind = numBat-numBat3+1:numBat;
+\end{lstlisting}
+
+\begin{itemize}
+  \item \textbf{Treino prim\'{a}rio}: c\'{e}lulas dos Batches 1 e 2 n\~ao selecionadas para
+    o teste.
+  \item \textbf{Teste prim\'{a}rio}: c\'{e}lulas alternadas dos Batches 1 e 2 (a cada 2)
+    mais a c\'{e}lula de \'{i}ndice 84.
+  \item \textbf{Teste secund\'{a}rio}: todas as c\'{e}lulas do Batch~3 (teste de
+    generaliza\c{c}\~ao para dados coletados independentemente).
+\end{itemize}
+
+%--------------------------------------------------------------------------
+\section{Engenharia de Atributos}
+
+\subsection{Diferencial de Capacidade --- dQ/dV}
+
+A fun\c{c}\~ao \texttt{EC\_dQdV.m} calcula o diferencial de capacidade em rela\c{c}\~ao \`{a}
+tens\~ao durante a descarga. O c\'{a}lculo \'{e} baseado em diferen\c{c}as finitas progressivas
+com passo fixo de tens\~ao:
+
+\begin{equation}
+\frac{dQ}{dV}\bigg|_{V_k} \approx \frac{\Delta Q}{\Delta V} =
+\frac{Q(i+j) - Q(i)}{E_{we}(i+j) - E_{we}(i)}
+\end{equation}
+
+onde $j$ \'{e} o menor \'{i}ndice tal que $|E_{we}(i+j) - E_{we}(i)| \geq \delta_V$,
+com $\delta_V = 4\,\text{mV}$ por padr\~ao. A capacidade \'{e} normalizada pela
+capacidade final $Q_\text{scale}$ antes do c\'{a}lculo. Zeros e NaNs iniciais s\~ao
+removidos.
+
+\subsection{Diferencial de Tens\~ao --- dV/dQ}
+
+A fun\c{c}\~ao \texttt{EC\_dVdQ.m} implementa o inverso: diferencial de tens\~ao em
+rela\c{c}\~ao \`{a} capacidade, com passo padr\~ao de $\delta_Q = 1\%$ da capacidade
+normalizada:
+
+\begin{equation}
+\frac{dV}{dQ}\bigg|_{Q_k} \approx \frac{\Delta V}{\Delta Q} =
+\frac{E_{we}(i+j) - E_{we}(i)}{Q(i+j) - Q(i)}
+\end{equation}
+
+A capacidade \'{e} invertida (\texttt{flipud}) para que a descarga seja processada
+no sentido crescente de $Q$.
+
+\subsection{Interpreta\c{c}\~ao F\'{i}sica dos Atributos}
+
+As curvas de dQ/dV e dV/dQ s\~ao sens\'{i}veis a transforma\c{c}\~oes de fase nos eletrodos
+da bateria. Mudan\c{c}as na forma ou posi\c{c}\~ao dos picos dessas curvas ao longo dos
+ciclos indicam degrada\c{c}\~ao interna (perda de material ativo, aumento de resist\^{e}ncia)
+--- mesmo quando a curva de capacidade total ainda n\~ao mostra queda significativa.
+
+A diferen\c{c}a entre as curvas dos ciclos 10 e 100, em particular
+$\Delta Q(V) = Q_{100}(V) - Q_{10}(V)$, mostrou-se o preditor mais poderoso
+identificado pelo estudo:
+
+\begin{equation}
+\Delta Q(V) = Q_{\text{ciclo 100}}(V) - Q_{\text{ciclo 10}}(V)
+\end{equation}
+
+A vari\^{a}ncia de $\Delta Q(V)$ ao longo do perfil de tens\~ao \'{e} o principal
+atributo de entrada para os modelos de regress\~ao descritos no artigo.
+
+%--------------------------------------------------------------------------
+\section{Visualiza\c{c}\~ao Diagn\'{o}stica}
+
+O script \texttt{Figure4\_mac.m} gera figuras diagn\'{o}sticas em quatro pain\'{e}is
+para cada c\'{e}lula analisada:
+
+\begin{enumerate}
+  \item \textbf{Painel superior --- dQ/dV (C/10):} curvas de diferencial de
+    capacidade obtidas com corrente lenta (C/10) nos ciclos 1, 100 e no fim de
+    vida.
+  \item \textbf{Painel 2 --- dV/dQ (C/10):} curvas de diferencial de tens\~ao com
+    corrente lenta nos mesmos ciclos de refer\^{e}ncia.
+  \item \textbf{Painel 3 --- dQ/dV (4C):} curvas de diferencial de capacidade com
+    corrente r\'{a}pida (4C) usada no ciclamento acelerado.
+  \item \textbf{Painel inferior --- $\Delta Q(V)$:} diferen\c{c}a acumulada de
+    capacidade em fun\c{c}\~ao da tens\~ao ao longo dos ciclos, desde o ciclo 10 at\'{e}
+    o fim de vida, colorida pela vida \'{u}til em escala logar\'{i}tmica.
+\end{enumerate}
+
+Tr\^{e}s exemplos de baterias s\~ao apresentados com pol\'{i}ticas de carga distintas:
+4C, 6C e 8C, correspondendo a tempos de carga de 15\,min, 10\,min e 7{,}5\,min
+respectivamente.
+
+%--------------------------------------------------------------------------
+\section{Formato dos Dados --- MATLAB vs.\ Python}
+
+\begin{table}[H]
+\centering
+\caption{Equival\^{e}ncia entre formatos de arquivo}
+\begin{tabular}{@{}lll@{}}
+\toprule
+\textbf{Aspecto} & \textbf{MATLAB (.mat)} & \textbf{Python (.pkl)} \\
+\midrule
+Estrutura principal & \texttt{struct}  & Dicion\'{a}rio aninhado \\
+Acesso aos ciclos   & \texttt{batch(i).cycles(j).campo} &
+  \texttt{batch[cell\_key]['cycles'][j]['campo']} \\
+Dados de resumo     & \texttt{batch(i).summary.QDischarge} &
+  \texttt{batch[cell\_key]['summary']['QDischarge']} \\
+Constru\c{c}\~ao          & Arquivos fornecidos pelo dataset & Notebooks \texttt{BuildPkl\_*} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Os notebooks \texttt{BuildPkl\_Batch1.ipynb}, \texttt{BuildPkl\_Batch2.ipynb} e
+\texttt{BuildPkl\_Batch3.ipynb} leem os arquivos \texttt{.mat} via \texttt{h5py} e
+geram os arquivos \texttt{.pkl} correspondentes, tornando os dados acess\'{i}veis
+diretamente em Python sem depend\^{e}ncia do MATLAB.
+
+%--------------------------------------------------------------------------
+\section{Hist\'{o}rico de Contribui\c{c}\~oes}
+
+O reposit\'{o}rio recebeu contribui\c{c}\~oes ao longo de aproximadamente quatro anos
+(2019--2022), com os seguintes marcos principais:
+
+\begin{table}[H]
+\centering
+\caption{Principais marcos do hist\'{o}rico de commits}
+\begin{tabular}{@{}llp{8cm}@{}}
+\toprule
+\textbf{Data} & \textbf{Autor} & \textbf{Contribui\c{c}\~ao} \\
+\midrule
+Mar/2019 & K. Severson / R. Braatz &
+  Commit inicial: ferramentas de processamento, notebooks de constru\c{c}\~ao dos pkl \\
+Mar/2019 & K. Severson &
+  Atualiza\c{c}\~ao para mesclar dados do Batch~2 no Batch~1 \\
+Abr/2019 & M. Hwasser &
+  Corre\c{c}\~ao de typo na extra\c{c}\~ao de dados \\
+Jun/2020 & P. Attia &
+  Adi\c{c}\~ao das fun\c{c}\~oes \texttt{EC\_dQdV.m} e \texttt{EC\_dVdQ.m}; script
+  \texttt{Figure4\_mac.m} \\
+Jan/2021 & P. Attia &
+  Documenta\c{c}\~ao de \texttt{Qdlin} e \texttt{Tdlin} no README \\
+Mai/2021 & P. Herring (TRI) &
+  Corre\c{c}\~ao da l\'{o}gica de remo\c{c}\~ao de c\'{e}lulas (depend\^{e}ncia de ordem no MATLAB) \\
+Mai/2021 & J. Schaeffer (ETH Z\"urich) &
+  Cria\c{c}\~ao do \texttt{requirements.txt}; atualiza\c{c}\~ao do README \\
+Nov/2022 & dependabot / P. Attia &
+  Atualiza\c{c}\~ao de seguran\c{c}a: NumPy de 1.19.2 para 1.22.0 (CVE fix) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+%--------------------------------------------------------------------------
+\section{Conclus\~oes}
+
+O reposit\'{o}rio entrega uma base s\'{o}lida de processamento de dados para o problema
+de previs\~ao de vida \'{u}til de baterias. Os pontos-chave do trabalho realizado s\~ao:
+
+\begin{enumerate}
+  \item \textbf{Coleta e organiza\c{c}\~ao} de dados de 124 baterias LFP/grafite em
+    tr\^{e}s lotes independentes, com limpeza criteriosa de c\'{e}lulas defeituosas.
+
+  \item \textbf{Unifica\c{c}\~ao} dos dados originalmente distribu\'{i}dos em dois lotes
+    sequenciais, preservando a continuidade dos ciclos de c\'{e}lulas que
+    cruzaram os per\'{i}odos de coleta.
+
+  \item \textbf{Engenharia de atributos} centrada em curvas de dQ/dV e dV/dQ
+    --- representa\c{c}\~oes fisicamente interpret\'{a}veis que capturam a degrada\c{c}\~ao
+    interna antes que ela seja vis\'{i}vel na capacidade integrada.
+
+  \item \textbf{Padroniza\c{c}\~ao} da vari\'{a}vel alvo: n\'{u}mero de ciclos at\'{e}
+    $Q < 0{,}88$\,Ah, equivalente a aproximadamente 80\% da capacidade nominal.
+
+  \item \textbf{Portabilidade}: os dados originalmente em MATLAB foram
+    convertidos para Python (.pkl), tornando o trabalho acess\'{i}vel \`{a} comunidade
+    sem licen\c{c}a de MATLAB.
+
+  \item \textbf{Protocolo de valida\c{c}\~ao rigoroso}: a divis\~ao treino/teste \'{e}
+    definida em c\'{o}digo, garantindo reprodutibilidade dos resultados do artigo
+    publicado.
+\end{enumerate}
+
+O c\'{o}digo de modelagem --- que implementa regress\~ao regularizada sobre os atributos
+descrito e atinge erros de previs\~ao inferiores a 10\% na vida \'{u}til de ciclos ---
+est\'{a} dispon\'{i}vel mediante licen\c{c}a acad\^{e}mica junto aos autores do artigo.
+
+%--------------------------------------------------------------------------
+\section*{Refer\^{e}ncia}
+
+K.A.~Severson, P.M.~Attia, N.~Jin, N.~Perkins, B.~Jiang, Z.~Yang,
+M.H.~Chen, M.~Aykol, H.K.~Herring, D.~Fraggedakis, M.Z.~Bazant,
+S.J.~Harris, W.C.~Chueh, R.D.~Braatz,
+\textit{Data-driven prediction of battery cycle life before capacity degradation},
+\textbf{Nature Energy} 4, 383--391 (2019).
+\url{https://doi.org/10.1038/s41560-019-0356-8}
+
+\end{document}
