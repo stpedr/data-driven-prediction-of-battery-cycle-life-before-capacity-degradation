@@ -1,0 +1,567 @@
+\documentclass[12pt,a4paper]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[brazil]{babel}
+\usepackage{geometry}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{booktabs}
+\usepackage{hyperref}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{float}
+\usepackage{enumitem}
+\usepackage{parskip}
+\usepackage{fancyhdr}
+\usepackage{caption}
+\usepackage{array}
+\usepackage{multirow}
+\usepackage{mathtools}
+
+\geometry{top=2.5cm, bottom=2.5cm, left=3cm, right=2.5cm}
+
+\hypersetup{colorlinks=true, linkcolor=blue!70!black, urlcolor=blue!70!black}
+
+\lstdefinestyle{python}{
+  language=Python,
+  basicstyle=\ttfamily\footnotesize,
+  keywordstyle=\color{blue}\bfseries,
+  commentstyle=\color{green!55!black},
+  stringstyle=\color{red!70!black},
+  numberstyle=\tiny\color{gray},
+  numbers=left, stepnumber=1,
+  frame=single, breaklines=true, captionpos=b
+}
+
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small Treinamento do Modelo --- Predi\c{c}\~ao de Vida \'{U}til de Baterias}
+\fancyhead[R]{\small\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+
+\title{
+  \vspace{-1cm}
+  {\large Relat\'{o}rio T\'{e}cnico} \\[0.4em]
+  \textbf{Treinamento do Modelo Preditivo de Vida \'{U}til de Baterias:\\
+  Features, T\'{e}cnicas e Crit\'{e}rios} \\[0.4em]
+  {\normalsize Baseado em: Severson, Attia et al.\ --- \emph{Nature Energy} (2019)}
+}
+\author{Pedro Lievra}
+\date{Junho de 2026}
+
+\begin{document}
+\maketitle
+\thispagestyle{fancy}
+\tableofcontents
+\newpage
+
+%==========================================================================
+\section{Vis\~ao Geral do Problema de Aprendizado}
+
+O objetivo do modelo \'{e} prever o n\'{u}mero de ciclos de vida de uma bateria
+(vari\'{a}vel de sa\'{i}da cont\'{i}nua) com base em medidas coletadas apenas nos
+\textbf{primeiros 100 ciclos} de opera\c{c}\~ao. Trata-se de um problema de
+\textbf{regress\~ao supervisionada}, onde:
+
+\begin{itemize}
+  \item \textbf{Entrada ($\mathbf{x}$):} vetor de atributos extra\'{i}dos dos dados
+    de ciclos precoces (ciclos 2 a 100).
+  \item \textbf{Sa\'{i}da ($y$):} $\log_{10}(\text{ciclos de vida})$, definido como
+    o n\'{u}mero de ciclos at\'{e} a capacidade de descarga atingir $0{,}88$\,Ah
+    ($\approx 80\%$ da capacidade nominal).
+\end{itemize}
+
+A vari\'{a}vel alvo \'{e} transformada em escala logar\'{i}tmica para linearizar a
+distribui\c{c}\~ao assim\'{e}trica dos ciclos de vida (que variam de $\sim$150 a
+$\sim$2.300 ciclos no dataset).
+
+%==========================================================================
+\section{Engenharia de Features}
+
+O paper descreve tr\^{e}s grupos de atributos, todos derivados de grandezas
+medidas nos ciclos precoces.
+
+%--------------------------------------------------------------------------
+\subsection{Atributo Central: Curva Diferencial $\Delta Q_{100-10}(V)$}
+
+O atributo mais importante \'{e} constru\'{i}do a partir da diferen\c{c}a entre as
+curvas de capacidade de descarga interpoladas em tens\~ao ({\ttfamily Qdlin})
+nos ciclos 100 e 10:
+
+\begin{equation}
+  \Delta Q_{100-10}(V) \;=\; Q_{\text{ciclo\,100}}(V) \;-\; Q_{\text{ciclo\,10}}(V)
+\end{equation}
+
+onde $Q_{\text{ciclo\,}k}(V)$ \'{e} a capacidade de descarga linearmente
+interpolada em uma grade uniforme de $1{.}000$ pontos de tens\~ao entre
+$2{,}0$\,V e $3{,}5$\,V (vetor {\ttfamily Vdlin}).
+
+Dessa curva derivam-se dois escalares fundamentais:
+
+\begin{equation}
+  f_1 = \log_{10}\!\bigl(\operatorname{Var}[\Delta Q_{100-10}(V)]\bigr)
+\end{equation}
+\begin{equation}
+  f_2 = \log_{10}\!\bigl(\lvert\min[\Delta Q_{100-10}(V)]\rvert\bigr)
+\end{equation}
+
+A transforma\c{c}\~ao logar\'{i}tmica \'{e} aplicada porque a rela\c{c}\~ao entre
+esses escalares e a vida \'{u}til \'{e} log-linear.
+
+\textbf{Justificativa f\'{i}sica:} uma bateria que ir\'{a} degradar rapidamente j\'{a}
+exibe, no ciclo 100, uma distribui\c{c}\~ao de capacidade ao longo da tens\~ao muito
+diferente da do ciclo 10 --- resultado de plating de l\'{i}tio, perda de material
+ativo e aumento de resist\^{e}ncia. A vari\^{a}ncia de $\Delta Q$ quantifica essa
+mudan\c{c}a de forma\,escalar.
+
+%--------------------------------------------------------------------------
+\subsection{Grupo 1 --- Features de Descarga (Ciclos 2--100)}
+
+\begin{table}[H]
+\centering
+\caption{Atributos do Grupo 1 derivados da curva de capacidade de descarga}
+\begin{tabular}{@{}clp{6.5cm}@{}}
+\toprule
+\textbf{ID} & \textbf{Feature} & \textbf{Descri\c{c}\~ao} \\
+\midrule
+$f_1$ & $\log(\operatorname{Var}[\Delta Q_{100-10}])$ &
+  Vari\^{a}ncia da curva diferencial de capacidade \\
+$f_2$ & $\log(|\min[\Delta Q_{100-10}]|)$ &
+  M\'{o}dulo do valor m\'{i}nimo da curva diferencial \\
+$f_3$ & $\theta_1$ (slope) &
+  Coeficiente angular do ajuste linear de
+  $Q_{\text{discharge}}$ nos ciclos 2--100 \\
+$f_4$ & $\theta_0$ (intercept) &
+  Coeficiente linear do ajuste linear de
+  $Q_{\text{discharge}}$ nos ciclos 2--100 \\
+$f_5$ & $Q_{\text{discharge, ciclo\,2}}$ &
+  Capacidade de descarga no segundo ciclo \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Os coeficientes $\theta_0$ e $\theta_1$ s\~ao obtidos por regress\~ao linear
+simples (m\'{i}nimos quadrados) sobre a sequ\^{e}ncia de capacidades:
+
+\begin{equation}
+  Q_{\text{discharge}}(k) \approx \theta_1\,k + \theta_0, \quad k = 2, 3, \ldots, 100
+\end{equation}
+
+%--------------------------------------------------------------------------
+\subsection{Grupo 2 --- Features de Temperatura e Resist\^{e}ncia Interna}
+
+\begin{table}[H]
+\centering
+\caption{Atributos do Grupo 2 derivados de temperatura e resist\^{e}ncia}
+\begin{tabular}{@{}clp{7cm}@{}}
+\toprule
+\textbf{ID} & \textbf{Feature} & \textbf{Descri\c{c}\~ao} \\
+\midrule
+$f_6$ & $T_{\max,\,\text{ciclo\,2}}$ &
+  Temperatura m\'{a}xima registrada no ciclo 2 (\textcelsius) \\
+$f_7$ & $\text{IR}_{\text{ciclo\,2}}$ &
+  Resist\^{e}ncia interna medida no ciclo 2 (m\textohm) \\
+$f_8$ & $\overline{t_{\text{carga}}}_{2\text{--}5}$ &
+  Tempo m\'{e}dio de carregamento nos ciclos 2 a 5 (min) \\
+$f_9$ & $\min(\text{IR})_{1\text{--}5}$ &
+  Resist\^{e}ncia interna m\'{i}nima nos primeiros 5 ciclos \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+%--------------------------------------------------------------------------
+\subsection{Grupo 3 --- Feature de Capacidade Integrada}
+
+\begin{table}[H]
+\centering
+\caption{Atributo do Grupo 3}
+\begin{tabular}{@{}clp{7cm}@{}}
+\toprule
+\textbf{ID} & \textbf{Feature} & \textbf{Descri\c{c}\~ao} \\
+\midrule
+$f_{10}$ & $\sum_{k=2}^{100} Q_{\text{discharge}}(k)$ &
+  Capacidade total descarregada (integral) nos ciclos 2--100 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+%--------------------------------------------------------------------------
+\subsection{Resumo e Escalonamento das Features}
+
+O vetor de features completo (\textit{full model}) \'{e}:
+\[
+  \mathbf{x} = [f_1,\, f_2,\, f_3,\, f_4,\, f_5,\, f_6,\, f_7,\, f_8,\, f_9,\, f_{10}]^\top
+  \in \mathbb{R}^{10}
+\]
+
+O \textit{discharge model} usa apenas $[f_1, f_2, f_3, f_4, f_5]^\top \in \mathbb{R}^5$
+(somente dados de descarga, sem temperatura ou resist\^{e}ncia interna).
+
+Antes do treinamento, todas as features s\~ao \textbf{padronizadas}
+(z-score):
+\begin{equation}
+  \tilde{f}_i = \frac{f_i - \mu_i}{\sigma_i}
+\end{equation}
+onde $\mu_i$ e $\sigma_i$ s\~ao estimados exclusivamente no conjunto de
+treino (sem vazamento para o teste).
+
+\textbf{Import\^{a}ncia relativa das features} (por magnitude do coeficiente
+ap\'{o}s padroniza\c{c}\~ao):
+
+\begin{enumerate}
+  \item $f_1$ --- $\log(\text{Var}[\Delta Q])$: preditor dominante, correlacionado
+    negativamente com $\log(\text{vida \'{u}til})$
+  \item $f_2$ --- $\log(|\min[\Delta Q]|)$: segundo preditor mais forte
+  \item $f_3$, $f_4$ --- slope e intercept de $Q_{\text{discharge}}$:
+    contribui\c{c}\~ao moderada
+  \item $f_6$--$f_{10}$: contribui\c{c}\~ao secund\'{a}ria, melhora pequena de
+    performance
+\end{enumerate}
+
+%==========================================================================
+\section{Modelo de Aprendizado: Elastic Net}
+
+%--------------------------------------------------------------------------
+\subsection{Escolha do Modelo}
+
+O paper adota \textbf{regress\~ao Elastic Net} --- um modelo linear com
+penaliza\c{c}\~ao combinada L1 e L2:
+
+\begin{equation}
+  \hat{\boldsymbol{\beta}} = \underset{\boldsymbol{\beta}}{\arg\min}
+  \left[
+    \frac{1}{N}\|\mathbf{y} - \mathbf{X}\boldsymbol{\beta}\|_2^2
+    + \lambda\left(\alpha\|\boldsymbol{\beta}\|_1
+    + \frac{1-\alpha}{2}\|\boldsymbol{\beta}\|_2^2\right)
+  \right]
+\end{equation}
+
+onde:
+\begin{itemize}
+  \item $\mathbf{y} \in \mathbb{R}^N$: vetor de $\log_{10}(\text{vida \'{u}til})$
+  \item $\mathbf{X} \in \mathbb{R}^{N \times p}$: matriz de features padronizadas
+  \item $\lambda > 0$: intensidade total de regulariza\c{c}\~ao
+  \item $\alpha \in [0,1]$: mistura entre L1 ($\alpha=1$, Lasso) e L2 ($\alpha=0$, Ridge)
+\end{itemize}
+
+%--------------------------------------------------------------------------
+\subsection{Justificativa da Escolha}
+
+A Elastic Net foi escolhida por tr\^{e}s raz\~oes complementares:
+
+\begin{enumerate}
+  \item \textbf{Esparsidade (L1):} com apenas $\sim$41 amostras de treino e 10
+    features, o Lasso induz esparsidade e evita overfitting, selecionando
+    automaticamente as features mais relevantes.
+
+  \item \textbf{Estabilidade (L2):} features correlacionadas (e.g., $f_1$ e $f_2$)
+    s\~ao estabilizadas pelo termo Ridge, evitando coeficientes extremos.
+
+  \item \textbf{Interpretabilidade:} o modelo linear permite calcular a contribui\c{c}\~ao
+    exata de cada feature --- cr\'{i}tico para valida\c{c}\~ao cient\'{i}fica.
+\end{enumerate}
+
+Modelos n\~ao-lineares (Random Forest, SVR, redes neurais) foram testados pelos
+autores, mas n\~ao superaram a Elastic Net dado o tamanho reduzido do dataset.
+
+%==========================================================================
+\section{Protocolo de Treinamento e Valida\c{c}\~ao}
+
+%--------------------------------------------------------------------------
+\subsection{Divis\~ao Treino/Teste}
+
+\begin{table}[H]
+\centering
+\caption{Parti\c{c}\~oes do dataset de 124 baterias}
+\begin{tabular}{@{}lccl@{}}
+\toprule
+\textbf{Parti\c{c}\~ao} & \textbf{Tamanho} & \textbf{Fonte} & \textbf{Prop\'{o}sito} \\
+\midrule
+Treino prim\'{a}rio    & 41 c\'{e}lulas & Batches 1+2 (pares) &
+  Ajuste dos par\^{a}metros \\
+Teste prim\'{a}rio     & 42 c\'{e}lulas & Batches 1+2 (\'{i}mpares) &
+  Avalia\c{c}\~ao na mesma distribui\c{c}\~ao \\
+Teste secund\'{a}rio   & 40 c\'{e}lulas & Batch 3 inteiro &
+  Generaliza\c{c}\~ao para distribui\c{c}\~ao diferente \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+A escolha de c\'{e}lulas alternadas (pares/\'{i}mpares) para treino/teste prim\'{a}rio
+garante que ambas as parti\c{c}\~oes cubram todo o espectro de pol\'{i}ticas de carga,
+evitando bias de distribui\c{c}\~ao. O Batch~3 usa pol\'{i}ticas de carga diferentes
+(4C, 6C, 8C) e serve como teste de generaliza\c{c}\~ao estrito.
+
+%--------------------------------------------------------------------------
+\subsection{Sele\c{c}\~ao de Hiperpar\^{a}metros por Valida\c{c}\~ao Cruzada}
+
+Com apenas 41 amostras de treino, o paper usa
+\textbf{Leave-One-Out Cross-Validation (LOOCV)} para selecionar
+$\lambda$ e $\alpha$:
+
+\begin{equation}
+  (\hat{\lambda}, \hat{\alpha}) = \underset{\lambda,\,\alpha}{\arg\min}
+  \sum_{i=1}^{41}\left(y_i - \hat{y}_i^{(-i)}\right)^2
+\end{equation}
+
+onde $\hat{y}_i^{(-i)}$ \'{e} a previs\~ao para a amostra $i$ com o modelo
+treinado em todas as outras 40 amostras.
+
+O LOOCV \'{e} prefer\'{i}vel ao $k$-fold neste contexto porque:
+\begin{itemize}
+  \item Maximiza os dados de treino em cada fold ($N-1 = 40$ amostras)
+  \item \'{E} determin\'{i}stico (sem aleatoriedade na divis\~ao)
+  \item \'{E} assintoticamente equivalente ao AIC para modelos lineares
+\end{itemize}
+
+Grade de busca dos hiperpar\^{a}metros:
+\begin{itemize}
+  \item $\lambda \in [10^{-4},\, 10^{2}]$ (escala logar\'{i}tmica, 100 pontos)
+  \item $\alpha \in \{0{,}1,\; 0{,}5,\; 0{,}7,\; 0{,}9,\; 0{,}95,\; 1{,}0\}$
+\end{itemize}
+
+%--------------------------------------------------------------------------
+\subsection{M\'{e}trica de Desempenho}
+
+A m\'{e}trica principal \'{e} o \textbf{RMSE percentual} na escala logar\'{i}tmica:
+
+\begin{equation}
+  \text{RMSE}_{\%} = \sqrt{\frac{1}{N}\sum_{i=1}^{N}
+    \left(\frac{\hat{y}_i - y_i}{y_i}\right)^2} \times 100\%
+\end{equation}
+
+onde $y_i$ e $\hat{y}_i$ s\~ao, respectivamente, a vida \'{u}til real e prevista
+em n\'{u}mero de ciclos (revertendo a transforma\c{c}\~ao logar\'{i}tmica).
+
+Tamb\'{e}m s\~ao reportados:
+\begin{itemize}
+  \item RMSE absoluto (em ciclos)
+  \item Coeficiente de determina\c{c}\~ao ($R^2$)
+  \item Erro percentual absoluto m\'{e}dio (MAPE)
+\end{itemize}
+
+%==========================================================================
+\section{Resultados do Treinamento}
+
+\subsection{Desempenho Quantitativo}
+
+\begin{table}[H]
+\centering
+\caption{Desempenho dos modelos nos conjuntos de teste}
+\begin{tabular}{@{}lcccc@{}}
+\toprule
+\multirow{2}{*}{\textbf{Modelo}} &
+\multicolumn{2}{c}{\textbf{Teste Prim\'{a}rio}} &
+\multicolumn{2}{c}{\textbf{Teste Secund\'{a}rio}} \\
+\cmidrule(lr){2-3} \cmidrule(lr){4-5}
+& RMSE (\%) & $R^2$ & RMSE (\%) & $R^2$ \\
+\midrule
+Discharge model ($f_1$--$f_5$) & 11,7 & 0,91 & 14,0 & 0,87 \\
+Full model ($f_1$--$f_{10}$)    &  9,1 & 0,94 & 13,1 & 0,89 \\
+Baseline: s\'{o} $f_1$           & 17,1 & 0,82 & 19,4 & 0,76 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{An\'{a}lise dos Coeficientes}
+
+Ap\'{o}s a sele\c{c}\~ao de hiperpar\^{a}metros, os coeficientes obtidos no
+\textit{full model} (valores aproximados do artigo) s\~ao:
+
+\begin{table}[H]
+\centering
+\caption{Coeficientes do modelo treinado (features padronizadas)}
+\begin{tabular}{@{}llrr@{}}
+\toprule
+\textbf{Feature} & \textbf{Descri\c{c}\~ao} & \textbf{Coeficiente} & \textbf{Sinal} \\
+\midrule
+$f_1$ & $\log(\text{Var}[\Delta Q])$    & $-0{,}58$ & negativo \\
+$f_2$ & $\log(|\min[\Delta Q]|)$         & $-0{,}31$ & negativo \\
+$f_3$ & slope $Q_{\text{discharge}}$    & $+0{,}21$ & positivo \\
+$f_4$ & intercept $Q_{\text{discharge}}$ & $+0{,}14$ & positivo \\
+$f_5$ & $Q_{\text{ciclo\,2}}$           & $+0{,}09$ & positivo \\
+$f_6$ & $T_{\max,\,\text{ciclo\,2}}$    & $-0{,}07$ & negativo \\
+$f_7$ & $\text{IR}_{\text{ciclo\,2}}$   & $-0{,}06$ & negativo \\
+$f_8$ & $\overline{t_{\text{carga}}}$   & $+0{,}05$ & positivo \\
+$f_9$ & $\min(\text{IR})$               & $-0{,}04$ & negativo \\
+$f_{10}$ & $\sum Q_{\text{discharge}}$  & $+0{,}03$ & positivo \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Os sinais s\~ao fisicamente interpret\'{a}veis:
+\begin{itemize}
+  \item $f_1$ e $f_2$ negativos: maior vari\^{a}ncia e maior desvio de $\Delta Q$
+    indicam degrada\c{c}\~ao acelerada $\Rightarrow$ vida \'{u}til menor.
+  \item $f_3$ positivo: slope menos negativo (capacidade cai menos r\'{a}pido nos
+    primeiros 100 ciclos) $\Rightarrow$ vida \'{u}til maior.
+  \item $f_7$ negativo: maior resist\^{e}ncia interna j\'{a} no ciclo 2 indica
+    bateria com mais imperfei\c{c}\~oes iniciais.
+\end{itemize}
+
+%==========================================================================
+\section{Crit\'{e}rios de Projeto do Modelo}
+
+\subsection{Por que usar apenas os primeiros 100 ciclos?}
+
+O limiar de 100 ciclos \'{e} uma escolha deliberada de compromisso:
+\begin{itemize}
+  \item \textbf{Operacional:} 100 ciclos a 4C representam $\sim$4 horas de
+    testes acelerados --- vi\'{a}vel industrialmente.
+  \item \textbf{Estat\'{i}stico:} com menos de 100 ciclos, $\Delta Q_{100-10}$
+    n\~ao \'{e} captur\'{a}vel; com mais de 100, o ganho de performance \'{e} marginal.
+  \item \textbf{Cient\'{i}fico:} a degrada\c{c}\~ao visualmente significativa s\'{o}
+    ocorre ap\'{o}s 200--500 ciclos; o modelo deve funcionar \textit{antes} disso.
+\end{itemize}
+
+\subsection{Por que escala logar\'{i}tmica na vari\'{a}vel alvo?}
+
+Tr\^{e}s raz\~oes:
+\begin{enumerate}
+  \item A distribui\c{c}\~ao de vidas \'{u}teis (100--2300 ciclos) \'{e} assim\'{e}trica
+    com cauda longa --- o log aproxima a normalidade.
+  \item Os erros percentuais s\~ao mais interpretavelmente comparados na escala log
+    do que erros absolutos (errar 100 ciclos em uma bateria de 200 \'{e} muito
+    diferente de errar 100 em uma de 2000).
+  \item O modelo linear se torna mais eficaz com a distribui\c{c}\~ao simetrizada.
+\end{enumerate}
+
+\subsection{Risco de Vazamento de Dados}
+
+O paper toma precau\c{c}\~oes expl\'{i}citas contra \textit{data leakage}:
+\begin{itemize}
+  \item Padroniza\c{c}\~ao (m\'{e}dia e desvio) calculada \textbf{somente no treino}
+    e aplicada ao teste.
+  \item Hiperpar\^{a}metros selecionados por LOOCV \textbf{dentro} do treino,
+    nunca com acesso ao teste.
+  \item Os ciclos usados para features (2--100) n\~ao se sobrep\~oem ao per\'{i}odo
+    de degrada\c{c}\~ao que define o r\'{o}tulo (ciclos acima de 100).
+\end{itemize}
+
+%==========================================================================
+\section{Implementa\c{c}\~ao em Python}
+
+Abaixo, um esbo\c{c}o de implementa\c{c}\~ao fiel ao protocolo do paper usando
+\texttt{scikit-learn}:
+
+\begin{lstlisting}[style=python, caption={Pipeline de treinamento com Elastic Net}]
+import numpy as np
+from sklearn.linear_model import ElasticNetCV
+from sklearn.preprocessing import StandardScaler
+from sklearn.pipeline import Pipeline
+
+# --- Extrai features de uma celula ---
+def extract_features(cell):
+    Qdlin_10  = cell['cycles']['10']['Qdlin']
+    Qdlin_100 = cell['cycles']['100']['Qdlin']
+    delta_Q   = Qdlin_100 - Qdlin_10
+
+    Q_seq = np.array([cell['cycles'][str(k)]['QDischarge']
+                      for k in range(2, 101)])
+    slope, intercept = np.polyfit(range(2, 101), Q_seq, 1)
+
+    return [
+        np.log10(np.var(delta_Q)),
+        np.log10(np.abs(np.min(delta_Q))),
+        slope,
+        intercept,
+        cell['cycles']['2']['QDischarge'],
+        cell['cycles']['2']['Tmax'],
+        cell['cycles']['2']['IR'],
+        np.mean([cell['cycles'][str(k)]['chargetime']
+                 for k in range(2, 6)]),
+        np.min([cell['cycles'][str(k)]['IR']
+                for k in range(1, 6)]),
+        np.sum(Q_seq),
+    ]
+
+cells = list(batch.values())
+X = np.array([extract_features(c) for c in cells])
+y = np.log10([c['cycle_life'] for c in cells])
+
+train_idx = list(range(0, len(X)-40, 2))
+test_idx  = list(range(1, len(X)-40, 2))
+sec_idx   = list(range(len(X)-40, len(X)))
+
+X_train, y_train = X[train_idx], y[train_idx]
+X_test,  y_test  = X[test_idx],  y[test_idx]
+
+model = Pipeline([
+    ('scaler', StandardScaler()),
+    ('enet', ElasticNetCV(
+        l1_ratio=[0.1, 0.5, 0.7, 0.9, 0.95, 1.0],
+        alphas=np.logspace(-4, 2, 100),
+        cv=len(X_train),
+        max_iter=10000
+    ))
+])
+
+model.fit(X_train, y_train)
+
+y_pred_test = model.predict(X_test)
+rmse_pct = np.sqrt(np.mean(
+    ((10**y_pred_test - 10**y_test) / 10**y_test)**2
+)) * 100
+print(f"RMSE primario: {rmse_pct:.1f}%")
+\end{lstlisting}
+
+%==========================================================================
+\section{Limita\c{c}\~oes e Cuidados}
+
+\begin{enumerate}
+  \item \textbf{Dataset pequeno:} 41 amostras de treino \'{e} insuficiente para
+    modelos complexos; a Elastic Net \'{e} adequada, mas resultados podem n\~ao
+    generalizar para outras qu\'{i}mias ou fabricantes.
+
+  \item \textbf{Dom\'{i}nio restrito:} o modelo foi treinado exclusivamente em
+    baterias LFP/grafite A123 com pol\'{i}ticas de carga r\'{a}pida. N\~ao h\'{a}
+    garantia de transfer\^{e}ncia para NMC, LCO ou c\'{e}lulas grandes.
+
+  \item \textbf{Aus\^{e}ncia de incerteza:} o modelo pontual n\~ao fornece
+    intervalos de confian\c{c}a. Para uso industrial, \'{e} essencial acrescentar
+    quantifica\c{c}\~ao de incerteza (e.g., bootstrap, Gaussian Process Regression).
+
+  \item \textbf{Depend\^{e}ncia dos ciclos 10 e 100:} o modelo requer dados
+    completos at\'{e} o ciclo 100. N\~ao funciona com menos ciclos de observa\c{c}\~ao
+    sem retreinamento.
+
+  \item \textbf{Pol\'{i}tica de carga constante:} o dataset usa pol\'{i}ticas fixas
+    de ciclo a ciclo. Baterias com perfis de uso variados (EV real) podem
+    apresentar degrada\c{c}\~ao com padr\~oes n\~ao capturados.
+\end{enumerate}
+
+%==========================================================================
+\section{Conclus\~ao}
+
+O pipeline de treinamento do paper pode ser resumido em cinco decis\~oes centrais:
+
+\begin{center}
+\begin{tabular}{@{}ll@{}}
+\toprule
+\textbf{Decis\~ao} & \textbf{Escolha} \\
+\midrule
+Feature principal    & $\text{Var}[\Delta Q_{100-10}(V)]$ em escala log \\
+Alvo                 & $\log_{10}(\text{ciclos de vida})$ \\
+Modelo               & Elastic Net (linear, L1+L2) \\
+Valida\c{c}\~ao cruzada & LOOCV nos 41 exemplos de treino \\
+M\'{e}trica              & RMSE percentual \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+A principal contribui\c{c}\~ao n\~ao \'{e} o modelo em si (Elastic Net \'{e} cl\'{a}ssica),
+mas a \textbf{descoberta de que $\text{Var}[\Delta Q_{100-10}(V)]$ \'{e} um
+preditor fisicamente interpret\'{a}vel, mensur\'{a}vel precocemente e altamente
+correlacionado com a vida \'{u}til} --- o que abre caminho para progn\'{o}stico
+online em sistemas reais.
+
+%==========================================================================
+\section*{Refer\^{e}ncia}
+
+K.A.~Severson, P.M.~Attia et al.,
+\textit{Data-driven prediction of battery cycle life before capacity degradation},
+\textbf{Nature Energy} 4, 383--391 (2019).\\
+\url{https://doi.org/10.1038/s41560-019-0356-8}
+
+\end{document}
