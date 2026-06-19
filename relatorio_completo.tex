@@ -1,0 +1,935 @@
+\documentclass[12pt,a4paper]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[brazil]{babel}
+\usepackage{geometry}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{booktabs}
+\usepackage{hyperref}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{float}
+\usepackage{enumitem}
+\usepackage{parskip}
+\usepackage{fancyhdr}
+\usepackage{caption}
+\usepackage{array}
+\usepackage{multirow}
+\usepackage{tcolorbox}
+\usepackage{mdframed}
+\usepackage{graphicx}
+\usepackage[expansion=false]{microtype}
+
+\geometry{top=2.5cm, bottom=2.5cm, left=3cm, right=2.5cm}
+
+\hypersetup{
+  colorlinks=true,
+  linkcolor=blue!60!black,
+  urlcolor=blue!60!black,
+  citecolor=blue!60!black
+}
+
+\tcbuselibrary{skins, breakable}
+
+% caixa de destaque azul
+\newtcolorbox{destaque}[1][]{
+  colback=blue!5!white,
+  colframe=blue!45!black,
+  fonttitle=\bfseries,
+  title=#1,
+  breakable
+}
+
+% caixa de alerta laranja
+\newtcolorbox{atencao}[1][]{
+  colback=orange!8!white,
+  colframe=orange!60!black,
+  fonttitle=\bfseries,
+  title=#1,
+  breakable
+}
+
+% caixa verde para conceitos
+\newtcolorbox{conceito}[1][]{
+  colback=green!5!white,
+  colframe=green!45!black,
+  fonttitle=\bfseries,
+  title=#1,
+  breakable
+}
+
+\lstdefinestyle{python}{
+  language=Python,
+  basicstyle=\ttfamily\footnotesize,
+  keywordstyle=\color{blue!80!black}\bfseries,
+  commentstyle=\color{green!50!black},
+  stringstyle=\color{red!70!black},
+  numberstyle=\tiny\color{gray},
+  numbers=left, stepnumber=1,
+  frame=single, breaklines=true, captionpos=b,
+  backgroundcolor=\color{gray!5}
+}
+
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small\textit{Previs\~ao da Vida \'{U}til de Baterias --- An\'{a}lise do Artigo}}
+\fancyhead[R]{\small\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+
+\title{
+  \vspace{-1cm}
+  {\large Relat\'{o}rio de An\'{a}lise de Artigo Cient\'{i}fico} \\[0.5em]
+  \textbf{\large Previs\~ao Orientada a Dados da Vida \'{U}til de Baterias\\
+  Antes da Degrada\c{c}\~ao de Capacidade} \\[0.4em]
+  {\normalsize Severson, Attia et al.\ --- \emph{Nature Energy}, vol.\ 4, p.\ 383--391, 2019}
+}
+\author{Pedro Lievra}
+\date{Junho de 2026}
+
+\begin{document}
+\maketitle
+\thispagestyle{fancy}
+
+\begin{abstract}
+Este relat\'{o}rio analisa integralmente o artigo de Severson e Attia et al.\ (2019),
+publicado na \emph{Nature Energy}, que demonstra ser poss\'{i}vel prever a vida \'{u}til
+de baterias de \'{i}ons de l\'{i}tio com at\'{e} 9,1\% de erro usando apenas os primeiros
+100 ciclos de opera\c{c}\~ao --- antes que qualquer degrada\c{c}\~ao vis\'{i}vel de capacidade
+ocorra. O relat\'{o}rio foi redigido para leitores em in\'{i}cio de carreira cient\'{i}fica
+e cobre o escopo experimental, a engenharia de atributos (\textit{features}),
+a arquitetura dos modelos de aprendizado de m\'{a}quina e os fundamentos
+f\'{i}sico-qu\'{i}micos da degrada\c{c}\~ao de baterias. Toda afirma\c{c}\~ao baseada em dados
+do artigo \'{e} indicada como tal; informa\c{c}\~oes n\~ao expl\'{i}citas no texto principal
+s\~ao devidamente sinalizadas.
+\end{abstract}
+
+\tableofcontents
+\newpage
+
+%===========================================================================
+\section{Contexto e Motiva\c{c}\~ao: por que prever a vida \'{u}til de baterias?}
+
+Imagine que voc\^{e} compra um celular novo. Quanto tempo a bateria vai durar?
+Essa pergunta parece simples, mas \'{e} extremamente dif\'{i}cil de responder com precis\~ao
+antes de usar o celular por meses ou anos. O problema \'{e} ainda mais grave em
+\'{a}reas cr\'{i}ticas como carros el\'{e}tricos, arm\'azem de energia solar e mar\'aculos
+m\'{e}dicos.
+
+O artigo parte dessa motiva\c{c}\~ao pr\'{a}tica: se pud\'{e}ssemos prever com confian\c{c}a
+a vida \'{u}til de uma bateria logo ap\'{o}s a sua fabrica\c{c}\~ao, poder\'{i}amos:
+
+\begin{itemize}
+  \item \textbf{Acelerar o desenvolvimento de novos materiais:} ao inv\'{e}s de
+    esperar meses para ver se uma bateria experimental dura mais, o fabricante
+    saberia em dias.
+  \item \textbf{Classificar e separar baterias na f\'{a}brica:} enviar as mais durad\~ouras
+    para aplica\c{c}\~oes cr\'{i}ticas (ve\'{i}culos el\'{e}tricos) e as mais fracas para usos
+    menos exigentes (armazenamento estacion\'{a}rio).
+  \item \textbf{Otimizar protocolos de carregamento r\'{a}pido:} um dos grandes desafios
+    do setor, com espa\c{c}o de par\^{a}metros enorme.
+\end{itemize}
+
+O grande obst\'{a}culo \'{e} que a degrada\c{c}\~ao de baterias \'{e} \textbf{n\~ao-linear e
+silenciosa nos ciclos iniciais}. Como os pr\'{o}prios autores documentam: nos
+primeiros 100 ciclos, 81\% das c\'{e}lulas do dataset apresentaram um
+\textit{aumento} de capacidade em rela\c{c}\~ao ao valor inicial. O sinal de degrada\c{c}\~ao
+simplesmente n\~ao aparece na capacidade integrada nessa fase.
+
+\begin{destaque}[A quest\~ao central do artigo]
+\'{E} poss\'{i}vel prever com boa precis\~ao quantos ciclos uma bateria vai durar
+usando apenas dados dos primeiros 100 ciclos --- quando ela ainda parece
+estar em perfeita sa\'{u}de?
+
+\textbf{Resposta dos autores: sim, com 9,1\% de erro m\'{e}dio.}
+\end{destaque}
+
+%===========================================================================
+\section{Metodologia Geral}
+
+\subsection{O Dataset: 124 baterias cicladas at\'{e} o fim da vida}
+
+Os autores constru\'{i}ram um dos maiores datasets p\'{u}blicos de baterias
+comerciais j\'{a} documentados em condi\c{c}\~oes controladas.
+
+\begin{conceito}[Especifica\c{c}\~oes da c\'{e}lula]
+\begin{itemize}
+  \item \textbf{Tipo:} C\'{e}lulas cil\'{i}ndricas comerciais LFP/grafite
+    (Fosfato de Ferro-L\'{i}tio no \'{a}nodo positivo / grafite no \'{a}nodo negativo)
+  \item \textbf{Fabricante/modelo:} A123 Systems, APR18650M1A
+  \item \textbf{Capacidade nominal:} 1,1 Ah; tens\~ao nominal: 3,3 V
+  \item \textbf{Quantidade:} 124 c\'{e}lulas
+  \item \textbf{Temperatura de teste:} 30 \textcelsius\ (c\^{a}mara controlada),
+    mas a temperatura interna da c\'{e}lula varia at\'{e} 10 \textcelsius\ dentro de
+    um ciclo por causa do calor gerado durante a carga r\'{a}pida
+  \item \textbf{Total de ciclos coletados:} aproximadamente 96.700 ciclos
+\end{itemize}
+\end{conceito}
+
+\subsection{Protocolo de Ciclagem}
+
+Cada c\'{e}lula foi submetida a um protocolo de carga diferente, mas descarga
+id\^{e}ntica:
+
+\begin{itemize}
+  \item \textbf{Carga (0--80\% SOC):} uma das 72 pol\'{i}ticas distintas de carga r\'{a}pida,
+    variando de 3,6\,C a 6\,C. Cada pol\'{i}tica pode ter uma ou duas etapas de
+    corrente constante. O tempo de carga de 0 a 80\% SOC variou entre
+    \textbf{9 e 13,3 minutos}.
+  \item \textbf{Carga (80--100\% SOC):} padronizada para todos: 1\,C com CC-CV
+    at\'{e} 3,6\,V, corte em C/50.
+  \item \textbf{Descarga:} padronizada: 4\,C com CC-CV at\'{e} 2,0\,V, corte em
+    C/50.
+  \item \textbf{Fim de vida:} definido como o ciclo em que a capacidade de
+    descarga cai abaixo de \textbf{80\% da capacidade nominal} (ou seja,
+    abaixo de 0,88 Ah).
+\end{itemize}
+
+\begin{atencao}[O que significa ``C'' (C-rate)?]
+``C-rate'' \'{e} uma medida de velocidade de carga ou descarga relativa \`{a}
+capacidade da bateria. Uma taxa de 1\,C significa carregar ou descarregar
+toda a capacidade em 1 hora. 4\,C significa fazer isso em 15 minutos.
+6\,C significa 10 minutos. Para uma bateria de 1,1 Ah, 1\,C corresponde
+a uma corrente de 1,1\,A.
+\end{atencao}
+
+\subsection{Distribui\c{c}\~ao dos Dados em Tr\^{e}s Lotes}
+
+O dataset foi coletado em tr\^{e}s campanhas experimentais (\textit{batches}),
+com pequenas diferen\c{c}as nos per\'{i}odos de repouso entre etapas. Os lotes foram
+coletados em maio/2017, junho/2017 e abril/2018. Quatro c\'{e}lulas com ru\'{i}do
+de medi\c{c}\~ao anormalmente alto foram exclu\'{i}das da an\'{a}lise.
+
+\subsection{Resultado: uma gama enorme de vidas \'{u}teis}
+
+Ao variar deliberadamente as pol\'{i}ticas de carga, os autores obtiveram um
+dataset com vidas \'{u}teis variando de \textbf{150 a 2.300 ciclos}
+(m\'{e}dia de 806 ciclos, desvio padr\~ao de 377 ciclos). Essa vari\^{a}ncia ampla
+\'{e} intencional: sem ela, seria imposs\'{i}vel treinar e testar modelos preditivos.
+
+\subsection{O Problema: a capacidade n\~ao previne nada nos primeiros 100 ciclos}
+
+Antes de partir para a solu\c{c}\~ao, os autores documentam rigorosamente
+\textit{por que} o problema \'{e} dif\'{i}cil. Eles calcularam correla\c{c}\~oes entre
+o logaritmo da vida \'{u}til e m\'{e}tricas simples de capacidade:
+
+\begin{table}[H]
+\centering
+\caption{Correla\c{c}\~ao entre m\'{e}tricas de capacidade e vida \'{u}til (dados do artigo)}
+\begin{tabular}{@{}lc@{}}
+\toprule
+\textbf{M\'{e}trica} & \textbf{Coef.\ de Correla\c{c}\~ao $\rho$} \\
+\midrule
+Capacidade de descarga no ciclo 2              & $-0{,}06$ \\
+Capacidade de descarga no ciclo 100            & $0{,}27$ \\
+Taxa de queda de capacidade (ciclos 95--100)   & $0{,}47$ \\
+Vari\^{a}ncia de $\Delta Q_{100-10}(V)$ (proposta) & $-0{,}93$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Esses n\'{u}meros revelam que \textbf{as curvas de capacidade sozinhas s\~ao p\'{e}ssimas
+preditoras}. A correla\c{c}\~ao de $-0,06$ da capacidade no ciclo 2 com a vida
+\'{u}til \'{e} estatisticamente irrelevante. Mesmo a taxa de queda de capacidade
+nos ciclos 95--100 (a mais informativa das tr\^{e}s) s\'{o} chega a $0,47$.
+
+Em contraste, a m\'{e}trica proposta pelo artigo atinge $\rho = -0,93$ ---
+uma correla\c{c}\~ao log-linear quase perfeita. O sinal de degrada\c{c}\~ao existe,
+mas est\'{a} escondido na \textit{forma} das curvas de voltagem, n\~ao na
+capacidade integrada.
+
+%===========================================================================
+\section{Extra\c{c}\~ao de Dados e Engenharia de Features}
+
+\subsection{Da Medida Bruta ao Vetor Padronizado}
+
+O dado bruto de cada ciclo \'{e} uma curva de descarga: uma sequ\^{e}ncia de pares
+(tens\~ao, capacidade) medida em intervalos de tempo. O problema \'{e} que ciclos
+diferentes t\^{e}m n\'{u}meros diferentes de pontos medidos e iniciam em pontos
+ligeiramente diferentes.
+
+Para comparar ciclos entre si, os autores aplicam uma \textbf{padroniza\c{c}\~ao vetorial}:
+
+\begin{enumerate}
+  \item Cada curva de descarga 4\,C \'{e} ajustada a uma fun\c{c}\~ao \textit{spline}
+    (uma curva suave que passa pelos pontos medidos).
+  \item A curva ajustada \'{e} avaliada em exatamente \textbf{1.000 pontos de tens\~ao
+    uniformemente espa\c{c}ados} entre 3,5\,V e 2,0\,V.
+  \item A grandeza calculada \'{e} \textbf{a capacidade em fun\c{c}\~ao da tens\~ao},
+    $Q(V)$, e n\~ao a tens\~ao em fun\c{c}\~ao da capacidade. Isso \'{e} crucial porque
+    a faixa de tens\~ao \'{e} id\^{e}ntica para todos os ciclos de todas as c\'{e}lulas,
+    criando uma base comum de compara\c{c}\~ao.
+\end{enumerate}
+
+Ao final, cada ciclo de cada c\'{e}lula \'{e} representado por um vetor $Q(V)$
+com \textbf{1.000 n\'{u}meros} que descrevem quantos ampere-hora a bateria
+forneceu \`{a}quele n\'{i}vel de tens\~ao.
+
+\begin{conceito}[Por que usar $Q(V)$ e n\~ao $V(Q)$?]
+A escolha de colocar capacidade no eixo y e tens\~ao no eixo x (ao inv\'{e}s
+do convencional) \'{e} estrat\'{e}gica: como a voltagem de corte \'{e} igual para
+todos os ciclos (2,0\,V a 3,5\,V), qualquer dois ciclos ficam automaticamente
+na mesma ``grade'' de compara\c{c}\~ao. Se o eixo fosse a capacidade, ciclos
+com capacidades diferentes teriam comprimentos de vetor diferentes,
+inviabilizando a subtra\c{c}\~ao direta.
+\end{conceito}
+
+\subsection{A Transforma\c{c}\~ao $\Delta Q(V)$: a curva diferencial}
+
+O principal insight do artigo \'{e} olhar para a \textbf{diferen\c{c}a} entre
+dois ciclos ao inv\'{e}s de cada ciclo individualmente. Define-se:
+
+\begin{equation}
+  \Delta Q_{i-j}(V) \;=\; Q_i(V) \;-\; Q_j(V)
+\end{equation}
+
+onde $i$ e $j$ s\~ao n\'{u}meros de ciclo. Como ambos os vetores t\^{e}m 1.000
+elementos avaliados nos mesmos pontos de tens\~ao, a subtra\c{c}\~ao \'{e} feita
+elemento por elemento, produzindo um vetor tamb\'{e}m de 1.000 elementos.
+
+O artigo usa principalmente:
+\begin{equation}
+  \Delta Q_{100-10}(V) \;=\; Q_{\text{ciclo 100}}(V) \;-\; Q_{\text{ciclo 10}}(V)
+\end{equation}
+
+\begin{atencao}[O que essa curva significa fisicamente?]
+$\Delta Q_{100-10}(V)$ responde \`{a} pergunta: \textit{``em cada n\'{i}vel de tens\~ao,
+quanto a capacidade mudou entre o ciclo 10 e o ciclo 100?''}
+
+Se a bateria estiver saud\'{a}vel, a curva do ciclo 100 ser\'{a} quase id\^{e}ntica
+\`{a} do ciclo 10, e $\Delta Q(V)$ ficar\'{a} pr\'{o}xima de zero em todos os pontos.
+Se a bateria estiver silenciosamente degradando, a \textit{distribui\c{c}\~ao}
+de como a capacidade \'{e} entregue ao longo da faixa de tens\~ao j\'{a} ter\'{a}
+mudado --- mesmo que a capacidade total ainda seja semelhante.
+\end{atencao}
+
+\subsection{Estat\'{i}sticas de Resumo: de 1.000 n\'{u}meros para um n\'{u}mero}
+
+Uma curva de 1.000 pontos n\~ao pode entrar diretamente em um modelo linear
+simples. Os autores extraem \textbf{estat\'{i}sticas de resumo} --- valores escalares
+que capturam propriedades globais da curva:
+
+\begin{itemize}
+  \item \textbf{Vari\^{a}ncia} de $\Delta Q(V)$: qu\~ao ``espalhada'' \'{e} a curva?
+  \item \textbf{M\'{i}nimo} de $\Delta Q(V)$: qual o maior valor negativo (pior regi\~ao
+    de tens\~ao)?
+  \item \textbf{M\'{e}dia} de $\Delta Q(V)$: tend\^{e}ncia central da mudan\c{c}a.
+\end{itemize}
+
+\begin{destaque}[O preditor dominante: $\log(\text{Var}[\Delta Q_{100-10}(V)])$]
+A vari\^{a}ncia de $\Delta Q_{100-10}(V)$, quando transformada em escala
+logar\'{i}tmica, exibe uma correla\c{c}\~ao de $\rho = -0{,}93$ com o logaritmo
+da vida \'{u}til --- um resultado surpreendentemente forte para um \'{u}nico
+atributo calculado a partir dos primeiros 100 ciclos.
+
+\textbf{Interpreta\c{c}\~ao f\'{i}sica (conforme o artigo):} a vari\^{a}ncia de
+$\Delta Q(V)$ reflete o grau de \textit{n\~ao-uniformidade na dissipa\c{c}\~ao
+de energia em fun\c{c}\~ao da tens\~ao}. Uma vari\^{a}ncia igual a zero significaria
+que a dissipa\c{c}\~ao de energia \'{e} id\^{e}ntica em todos os n\'{i}veis de tens\~ao
+entre os dois ciclos. Vari\^{a}ncia alta indica que em certas faixas de tens\~ao
+a bateria est\'{a} ``perdendo'' capacidade de forma desigual --- um indicador
+precoce de degrada\c{c}\~ao interna.
+\end{destaque}
+
+\subsection{O Conjunto Completo de Features Candidatas}
+
+Os autores constroem um conjunto de at\'{e} 20 atributos candidatos (descritos
+na Tabela Suplementar 1 do artigo) organizados por fonte de dado:
+
+\begin{table}[H]
+\centering
+\caption{Grupos de features candidatas (baseado no artigo)}
+\begin{tabular}{@{}clp{7.5cm}@{}}
+\toprule
+\textbf{Grupo} & \textbf{Fonte} & \textbf{Exemplos de atributos} \\
+\midrule
+1 & Curva $\Delta Q_{100-10}(V)$ &
+  Vari\^{a}ncia, m\'{i}nimo, m\'{e}dia da curva diferencial \\
+2 & Curva de capacidade de descarga (ciclos 2--100) &
+  Slope e intercepto do ajuste linear da capacidade;
+  capacidade no ciclo 2 \\
+3 & Temperatura (ciclos iniciais) &
+  Temperatura m\'{a}xima do ciclo 2 \\
+4 & Resist\^{e}ncia interna (ciclos iniciais) &
+  Resist\^{e}ncia interna no ciclo 2 \\
+5 & Tempo de carregamento &
+  Tempo m\'{e}dio de carga nos primeiros ciclos \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{atencao}[Nota de transpar\^{e}ncia]
+A Tabela Suplementar 1 com os 20 atributos completos e suas defini\c{c}\~oes
+exatas \'{e} material suplementar do artigo e n\~ao est\'{a} reproduzida integralmente
+no texto principal. As descri\c{c}\~oes acima s\~ao baseadas no texto principal do artigo.
+\end{atencao}
+
+\subsection{A Escolha dos Ciclos 10 e 100}
+
+Por que justamente ciclo 10 e ciclo 100? Os autores investigaram sistematicamente
+essa quest\~ao (Figura 5 do artigo):
+
+\begin{itemize}
+  \item Modelos univariados com apenas $\log(\text{Var}[\Delta Q_{i-j}(V)])$
+    foram treinados para todas as combina\c{c}\~oes de $i$ e $j$.
+  \item O erro de predi\c{c}\~ao \'{e} \textbf{relativamente est\'{a}vel para $i > 60$},
+    sugerindo que predi\c{c}\~ao de vida \'{u}til com ciclos ainda mais precoces
+    \'{e} poss\'{i}vel.
+  \item Picos de erro ocorrem em torno de $j = 55$ e $i = 70$ --- os autores
+    identificam isso como causado por flutua\c{c}\~oes de temperatura da c\^{a}mara
+    ambiental nesse per\'{i}odo.
+  \item A insensibilidade do modelo ao esquema de indexa\c{c}\~ao (para $i > 60$)
+    sugere que a degrada\c{c}\~ao \'{e} \textbf{linear com o n\'{u}mero de ciclos} nessa
+    fase, o que \'{e} consistente com o modo de degrada\c{c}\~ao LAM$_\text{deNE}$
+    (detalhado na Se\c{c}\~ao 5).
+\end{itemize}
+
+\subsection{Como Mapear Isso em um Pipeline Automatizado}
+
+A l\'{o}gica de extra\c{c}\~ao de features pode ser mapeada diretamente em um script
+de avalia\c{c}\~ao autom\'{a}tica de baterias:
+
+\begin{lstlisting}[style=python, caption={Esquema de extra\c{c}\~ao do preditor principal}]
+import numpy as np
+from scipy.interpolate import UnivariateSpline
+
+def extrair_Qdlin(tensao_bruta, capacidade_bruta, n_pontos=1000):
+    """Ajusta spline e interpola em grade uniforme de tensao."""
+    V_grid = np.linspace(3.5, 2.0, n_pontos)  # grade uniforme
+    spline = UnivariateSpline(tensao_bruta[::-1],
+                               capacidade_bruta[::-1], s=0)
+    return spline(V_grid)
+
+def calcular_delta_Q(cell, ciclo_i=100, ciclo_j=10):
+    """Calcula a curva diferencial entre dois ciclos."""
+    Q_i = extrair_Qdlin(cell[ciclo_i]['V'], cell[ciclo_i]['Q'])
+    Q_j = extrair_Qdlin(cell[ciclo_j]['V'], cell[ciclo_j]['Q'])
+    return Q_i - Q_j
+
+def preditor_principal(cell):
+    """Extrai o atributo de maior poder preditivo."""
+    delta_Q = calcular_delta_Q(cell)
+    return np.log10(np.var(delta_Q))  # log da variancia
+
+# Para um pipeline de triagem automatizada:
+scores = [preditor_principal(c) for c in dataset]
+# Scores mais negativos -> menor variancia -> bateria mais duradoura
+\end{lstlisting}
+
+Esse padr\~ao (spline $\rightarrow$ grade uniforme $\rightarrow$ subtra\c{c}\~ao $\rightarrow$
+estat\'{i}stica) \'{e} replicado para cada par de ciclos e para cada c\'{e}lula, sendo
+facilmente paraleliz\'{a}vel em sistemas de teste de alta vaz\~ao.
+
+%===========================================================================
+\section{Modelagem e Classifica\c{c}\~ao}
+
+\subsection{Estrutura Geral: Modelo Linear Regularizado}
+
+Ap\'{o}s construir o vetor de features $\mathbf{x}_i$ para cada c\'{e}lula $i$,
+o modelo proposto \'{e} linear:
+
+\begin{equation}
+  \hat{y}_i \;=\; \hat{\mathbf{w}}^\top \mathbf{x}_i
+  \label{eq:modelo_linear}
+\end{equation}
+
+onde $\hat{y}_i$ \'{e} o \textit{logaritmo} da vida \'{u}til prevista e
+$\hat{\mathbf{w}}$ \'{e} o vetor de coeficientes aprendidos. A escolha de prever
+$\log(\text{ciclos})$ ao inv\'{e}s de ciclos diretamente lineariza a rela\c{c}\~ao
+entre features e alvo.
+
+\subsection{Por que um modelo linear? O argumento dos autores}
+
+Os autores justificam explicitamente a escolha de modelos lineares regularizados:
+
+\begin{enumerate}
+  \item \textbf{Alta interpretabilidade:} o peso de cada feature no modelo \'{e}
+    diretamente leg\'{i}vel, conectando a previs\~ao a uma explica\c{c}\~ao f\'{i}sica.
+  \item \textbf{Baixo custo computacional:} ap\'{o}s treinamento offline, a previs\~ao
+    online requer apenas um produto interno simples.
+  \item \textbf{Compatibilidade com dataset pequeno:} modelos complexos como redes
+    neurais precisam de muito mais dados para generalizar.
+\end{enumerate}
+
+\subsection{Regulariza\c{c}\~ao: Lasso e Elastic Net}
+
+Com 20 features candidatas e apenas 41 amostras de treino, h\'{a} risco de
+\textit{overfitting} (memorizar os dados de treino sem generalizar). A solu\c{c}\~ao
+\'{e} adicionar uma penaliza\c{c}\~ao matem\'{a}tica aos coeficientes durante o ajuste:
+
+\begin{equation}
+  \hat{\mathbf{w}} = \underset{\mathbf{w}}{\arg\min}
+  \underbrace{\|\mathbf{y} - \mathbf{X}\mathbf{w}\|_2^2}_{\text{ajuste aos dados}}
+  + \lambda\, P(\mathbf{w})
+  \label{eq:regularizacao}
+\end{equation}
+
+O primeiro termo mede o erro de ajuste (como m\'{i}nimos quadrados comuns).
+O segundo termo, $\lambda P(\mathbf{w})$, penaliza coeficientes grandes.
+
+O artigo utiliza duas t\'{e}cnicas:
+
+\begin{conceito}[Lasso ($L_1$)]
+\[P(\mathbf{w}) = \|\mathbf{w}\|_1 = \sum_j |w_j|\]
+A penaliza\c{c}\~ao L1 tende a zerar completamente os coeficientes de features
+irrelevantes, realizando \textbf{sele\c{c}\~ao autom\'{a}tica de features}.
+\end{conceito}
+
+\begin{conceito}[Elastic Net ($L_1 + L_2$)]
+\[P(\mathbf{w}) = \frac{1-\alpha}{2}\|\mathbf{w}\|_2^2 + \alpha\|\mathbf{w}\|_1\]
+A Elastic Net combina a esparsidade do Lasso com a estabilidade da Ridge
+($L_2$). O par\^{a}metro $\alpha \in [0,1]$ controla a mistura.
+Os autores adotam a Elastic Net como m\'{e}todo principal, especialmente
+\textbf{quando features s\~ao correlacionadas entre si} e quando
+o n\'{u}mero de features \'{e} maior que o n\'{u}mero de amostras.
+\end{conceito}
+
+\begin{atencao}[Informa\c{c}\~ao Insuficiente para Verificar]
+Os valores exatos de $\alpha$ e $\lambda$ selecionados pelo procedimento de
+valida\c{c}\~ao cruzada n\~ao est\~ao reportados no texto principal do artigo.
+O artigo menciona que quatro vezes (\textit{four-fold}) de valida\c{c}\~ao
+cruzada com amostragem de Monte Carlo foram usadas para selecionar esses
+hiperpar\^{a}metros, mas os valores finais s\~ao material suplementar.
+\end{atencao}
+
+\subsection{Divis\~ao dos Dados: Treino, Teste Prim\'{a}rio e Teste Secund\'{a}rio}
+
+Os autores dividem os dados de forma rigorosa:
+
+\begin{table}[H]
+\centering
+\caption{Parti\c{c}\~oes do dataset (dados do artigo)}
+\begin{tabular}{@{}lp{3cm}p{7.5cm}@{}}
+\toprule
+\textbf{Parti\c{c}\~ao} & \textbf{N} & \textbf{Papel} \\
+\midrule
+Treino & 41 c\'{e}lulas &
+  Aprender os coeficientes e selecionar hiperpar\^{a}metros
+  via valida\c{c}\~ao cruzada de 4 folds. \\
+Teste prim\'{a}rio & 43 c\'{e}lulas &
+  Avaliar generaliza\c{c}\~ao. Gerado junto com o treino;
+  n\~ao visto durante o desenvolvimento. \\
+Teste secund\'{a}rio & 40 c\'{e}lulas &
+  Dataset gerado \textbf{ap\'{o}s} o desenvolvimento do modelo.
+  Teste mais rigoroso de generaliza\c{c}\~ao. \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+A exist\^{e}ncia de um teste secund\'{a}rio --- gerado depois que o modelo j\'{a} estava
+pronto --- \'{e} uma garantia importante de que os resultados n\~ao est\~ao
+inflacionados por escolhas inconscientes feitas durante o desenvolvimento.
+
+\begin{conceito}[Valida\c{c}\~ao Cruzada de 4 Folds + Monte Carlo]
+O treino (41 amostras) \'{e} subdividido em partes de calibra\c{c}\~ao e valida\c{c}\~ao
+para escolher $\alpha$ e $\lambda$. O processo usa 4 folds (cada fold omite
+um quarto dos dados) com amostragem de Monte Carlo. Isso maximiza o uso dos
+poucos dados de treino dispon\'{i}veis sem vazar informa\c{c}\~ao do teste.
+\end{conceito}
+
+\subsection{Os Tr\^{e}s Modelos de Regress\~ao}
+
+Os autores apresentam tr\^{e}s vers\~oes progressivamente mais ricas:
+
+\subsubsection{Modelo 1 --- ``Variance'' (1 feature)}
+
+Usa apenas o logaritmo da vari\^{a}ncia de $\Delta Q_{100-10}(V)$. N\~ao h\'{a}
+sele\c{c}\~ao de features --- esse \'{u}nico atributo \'{e} usado diretamente.
+
+\subsubsection{Modelo 2 --- ``Discharge'' (6 features selecionadas de 13 candidatas)}
+
+Considera features derivadas exclusivamente de medi\c{c}\~oes de descarga
+(voltagem e corrente), sem dados de temperatura ou resist\^{e}ncia interna.
+Das 13 features candidatas, a Elastic Net selecionou 6.
+
+\subsubsection{Modelo 3 --- ``Full'' (9 features selecionadas de 20 candidatas)}
+
+Incorpora todos os fluxos de dados dispon\'{i}veis: descarga, temperatura e
+resist\^{e}ncia interna. Das 20 features candidatas, 9 foram selecionadas.
+
+\subsection{M\'{e}tricas de Avalia\c{c}\~ao}
+
+O artigo usa duas m\'{e}tricas:
+
+\begin{equation}
+  \text{RMSE} = \sqrt{\frac{1}{n}\sum_{i=1}^{n}(y_i - \hat{y}_i)^2}
+  \quad \text{[em ciclos]}
+\end{equation}
+
+\begin{equation}
+  \text{Erro percentual m\'{e}dio} = \frac{1}{n}\sum_{i=1}^{n}
+  \frac{|y_i - \hat{y}_i|}{y_i} \times 100\%
+\end{equation}
+
+onde $y_i$ \'{e} a vida \'{u}til real e $\hat{y}_i$ \'{e} a prevista (ap\'{o}s
+reverter a transforma\c{c}\~ao logar\'{i}tmica).
+
+\subsection{Resultados Quantitativos dos Tr\^{e}s Modelos}
+
+\begin{table}[H]
+\centering
+\caption{Desempenho dos modelos de regress\~ao (Tabela 1 do artigo).
+  Os valores entre par\^{e}nteses excluem uma c\'{e}lula an\^{o}mala do teste prim\'{a}rio.}
+\begin{tabular}{@{}lcccccc@{}}
+\toprule
+\multirow{2}{*}{\textbf{Modelo}} &
+\multicolumn{3}{c}{\textbf{RMSE (ciclos)}} &
+\multicolumn{3}{c}{\textbf{Erro percentual m\'{e}dio (\%)}} \\
+\cmidrule(lr){2-4} \cmidrule(lr){5-7}
+& Treino & Teste 1\'{a} & Teste 2\'{a} & Treino & Teste 1\'{a} & Teste 2\'{a} \\
+\midrule
+``Variance'' & 103 & 138 (138) & 196 & 14,1 & 14,7 (13,2) & 11,4 \\
+``Discharge'' & 76  & 91 (86)  & 173 & 9,8  & 13,0 (10,1) & 8,6  \\
+``Full''      & 51  & 118 (100) & 214 & 5,6  & 14,1 (7,5)  & 10,7 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{destaque}[Interpreta\c{c}\~ao dos resultados]
+\begin{itemize}
+  \item O modelo ``Variance'', com apenas 1 feature, j\'{a} atinge erros de
+    \textbf{11--15\%} nos conjuntos de teste --- not\'{a}vel para algo t\~ao simples.
+  \item O modelo ``Discharge'' melhora para \textbf{8,6\%} no teste secund\'{a}rio.
+  \item O modelo ``Full'' tem o melhor desempenho no treino (5,6\%), mas
+    a melhora no teste secund\'{a}rio \'{e} modesta (10,7\%). Os autores discutem
+    que o erro ligeiramente mais alto pode ocorrer porque features de
+    temperatura e resist\^{e}ncia interna adicionam informa\c{c}\~ao relevante
+    mas tamb\'{e}m poss\'{i}vel ru\'{i}do quando o dom\'{i}nio \'{e} diferente.
+  \item A c\'{e}lula an\^{o}mala mencionada nos par\^{e}nteses degradou muito
+    rapidamente e n\~ao seguiu o padr\~ao das demais; exclu\'{i}-la do c\'{a}lculo
+    do teste prim\'{a}rio revela erros de at\'{e} \textbf{7,5\%}.
+\end{itemize}
+\end{destaque}
+
+\subsection{Benchmark: quanto melhor do que o estado da arte anterior?}
+
+Os autores comparam seus modelos com abordagens mais simples:
+
+\begin{itemize}
+  \item \textbf{Predi\c{c}\~ao pela m\'{e}dia:} usar a vida \'{u}til m\'{e}dia do treino
+    para prever todas as c\'{e}lulas. Resultado: $\approx 30\%$ e $36\%$ de erro
+    nos testes prim\'{a}rio e secund\'{a}rio.
+  \item \textbf{Modelo com curva de capacidade apenas (100 ciclos):}
+    $23\%$ e $50\%$ de erro.
+  \item \textbf{Modelo com curva de capacidade (300 ciclos):}
+    $27\%$ e $46\%$ de erro, mostrando que usar 3x mais dados sem
+    features de voltagem n\~ao ajuda.
+  \item \textbf{Literatura anterior:} trabalhos publicados geralmente precisam
+    de pelo menos 25\% de degrada\c{c}\~ao de capacidade (centenas de ciclos)
+    para alcan\c{c}ar precis\~ao similar.
+\end{itemize}
+
+\subsection{Classifica\c{c}\~ao: 5 Ciclos Bastam para Separar Baterias em Dois Grupos}
+
+Al\'{e}m da regress\~ao quantitativa, os autores desenvolvem um modelo de
+\textbf{classifica\c{c}\~ao bin\'{a}ria} com objetivo diferente: usando apenas os
+\textbf{primeiros 5 ciclos}, classificar cada c\'{e}lula em ``vida \'{u}til baixa''
+ou ``vida \'{u}til alta'', com limiar em 550 ciclos.
+
+\subsubsection{Modelo de Classifica\c{c}\~ao Utilizado: Regress\~ao Log\'{i}stica}
+
+A regress\~ao log\'{i}stica \'{e} um m\'{e}todo cl\'{a}ssico para classifica\c{c}\~ao bin\'{a}ria.
+Ela produz uma probabilidade de pertencer a cada classe e usa uma fronteira
+de decis\~ao linear no espa\c{c}o de features.
+
+\begin{conceito}[Regress\~ao Log\'{i}stica em Poucas Palavras]
+Imagine que voc\^{e} quer decidir se uma bateria vai durar mais ou menos de
+550 ciclos. A regress\~ao log\'{i}stica aprende uma combina\c{c}\~ao linear das
+features e a transforma numa probabilidade entre 0 e 1 via a fun\c{c}\~ao
+sig\'moide:
+\[P(\text{vida alta}) = \frac{1}{1 + e^{-(\mathbf{w}^\top \mathbf{x})}}\]
+Se $P > 0{,}5$, classifica como ``vida alta''; caso contr\'{a}rio, ``vida baixa''.
+\end{conceito}
+
+\subsubsection{Features usadas na classifica\c{c}\~ao}
+
+O classificador utiliza dados apenas dos ciclos 1 a 5. A feature mais simples
+\'{e} a vari\^{a}ncia de:
+\[\Delta Q_{5-4}(V) = Q_{\text{ciclo 5}}(V) - Q_{\text{ciclo 4}}(V)\]
+O ``classificador completo'' usa regress\~ao log\'{i}stica regularizada com
+18 features candidatas.
+
+\subsubsection{Resultados da Classifica\c{c}\~ao}
+
+\begin{table}[H]
+\centering
+\caption{Acur\'{a}cia de classifica\c{c}\~ao (Tabela 2 do artigo).
+  Limiar: 550 ciclos de vida \'{u}til.}
+\begin{tabular}{@{}lccc@{}}
+\toprule
+\textbf{Classificador} & \textbf{Treino (\%)} &
+\textbf{Teste Prim\'{a}rio (\%)} & \textbf{Teste Secund\'{a}rio (\%)} \\
+\midrule
+``Variance'' (1 feature) & 82,1 & 78,6 & 97,5 \\
+``Full'' (18 candidatas) & 97,4 & 92,7 & 97,5 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{destaque}[Interpreta\c{c}\~ao]
+\begin{itemize}
+  \item O ``classificador completo'' atinge acur\'{a}cia m\'{e}dia de $\approx 95{,}1\%$
+    (combinando os dois conjuntos de teste), correspondendo a um erro de
+    classifica\c{c}\~ao de apenas \textbf{4,9\%} usando apenas 5 ciclos de dados.
+  \item O ``classificador de vari\^{a}ncia'' com uma \'{u}nica feature atinge
+    acur\'{a}cia m\'{e}dia de $\approx 88{,}8\%$.
+  \item O desempenho superior no teste secund\'{a}rio (97,5\%) sugere que o
+    sinal de classifica\c{c}\~ao \'{e} robusto entre lotes de dados diferentes.
+\end{itemize}
+\end{destaque}
+
+%===========================================================================
+\section{Fundamentos Eletroqu\'{i}micos da Degrada\c{c}\~ao}
+
+\subsection{O Paradoxo: como pode a voltagem saber o que a capacidade n\~ao sabe?}
+
+Para entender por que as curvas de voltagem preveem o futuro enquanto a
+capacidade integrada n\~ao consegue, precisamos entender o que acontece
+\textit{dentro} da bateria durante a degrada\c{c}\~ao precoce.
+
+A degrada\c{c}\~ao de baterias de \'{i}ons de l\'{i}tio tem m\'{u}ltiplos mecanismos.
+Alguns reduzem imediatamente a capacidade; outros alteram o comportamento
+electroqu\'{i}mico sem afetar a capacidade por muitos ciclos. \'{E} exatamente
+nesse segundo tipo que est\'{a} a chave do artigo.
+
+\subsection{O Mecanismo LAM$_\text{deNE}$: Perda de Material Ativo do Eletrodo
+Negativo Deslitiado}
+
+\begin{conceito}[O que \'{e} LAM$_\text{deNE}$?]
+``LAM'' vem de \textit{Loss of Active Material} (perda de material ativo) e
+``deNE'' de \textit{delithiated Negative Electrode} (eletrodo negativo deslitiado,
+ou seja, o grafite quando o l\'{i}tio j\'{a} saiu dele --- estado de descarga).
+
+Em termos simples: ao longo dos ciclos, parte das part\'{i}culas de grafite
+perde a capacidade de armazenar e liberar \'{i}ons de l\'{i}tio de forma revers\'{i}vel.
+Esse grafite ``morto'' ainda existe fisicamente na c\'{e}lula, mas n\~ao participa
+mais da eletroqu\'{i}mica.
+\end{conceito}
+
+\subsubsection{Por que o LAM$_\text{deNE}$ n\~ao reduz a capacidade nos ciclos iniciais?}
+
+Essa \'{e} a parte crucial. Nas c\'{e}lulas LFP/grafite testadas:
+
+\begin{itemize}
+  \item A capacidade do eletrodo negativo (grafite) \'{e} \textbf{maior} do que
+    a capacidade do eletrodo positivo (LFP). Em eletroqu\'{i}mica, diz-se que a
+    c\'{e}lula \'{e} ``limitada pelo c\'{a}todo'' (positive electrode limited).
+  \item Quando o LAM$_\text{deNE}$ retira parte do grafite da fun\c{c}\~ao, o que
+    acontece? O eletrodo negativo perde capacidade, mas ainda \'{e} maior do
+    que o eletrodo positivo. Portanto, a \textbf{capacidade total da c\'{e}lula
+    n\~ao muda} --- o eletrodo positivo continua sendo o fator limitante.
+  \item No entanto, os \'{i}ons de l\'{i}tio agora precisam ser acomodados em
+    \textit{menos} s\'{i}tios de grafite, o que \textbf{muda os potenciais
+    el\'{e}tricos em que o l\'{i}tio \'{e} armazenado} --- mudando a forma da
+    curva de voltagem sem alterar a \'{a}rea sob ela.
+\end{itemize}
+
+\begin{destaque}[A met\'afora da poltrona]
+Imagine que o grafite \'{e} como um avi\~ao com 200 poltronas, e o eletrodo positivo
+\'{e} um port\~ao de embarque que s\'{o} aceita 150 passageiros (l\'{i}tio). A capacidade
+da c\'{e}lula \'{e} determinada pelos 150 passageiros que o port\~ao aceita.
+
+Quando o LAM$_\text{deNE}$ ``remove'' 20 poltronas do avi\~ao (restam 180),
+o port\~ao ainda s\'{o} embarca 150 passageiros --- a capacidade n\~ao mudou.
+Mas agora os 150 passageiros est\~ao mais ``apertados'' em 180 poltronas do
+que estavam em 200. A dist\textit{ribui\c{c}\~ao} de onde cada passageiro
+senta muda, alterando o ``mapa de ocupa\c{c}\~ao'' --- an\'{a}logo \`{a} curva $Q(V)$.
+\end{destaque}
+
+\subsubsection{A transi\c{c}\~ao catastr\'{o}fica: quando o LAM avan\c{c}a demais}
+
+Quando o LAM$_\text{deNE}$ progride suficientemente, o eletrodo negativo perde
+tanto material ativo que sua capacidade cai \textit{abaixo} do invent\'{a}rio de
+l\'{i}tio da c\'{e}lula. Nesse ponto:
+
+\begin{enumerate}
+  \item Durante a carga, os \'{i}ons de l\'{i}tio chegam ao eletrodo negativo,
+    mas n\~ao h\'{a} s\'{i}tios suficientes para acomod\'{a}-los no grafite.
+  \item O l\'{i}tio excessivo se deposita na superf\'{i}cie do grafite na forma
+    de l\'{i}tio met\'{a}lico (\textit{lithium plating}).
+  \item O plating \'{e} uma fonte adicional de irreversibilidade: o l\'{i}tio
+    depositado pode reagir quimicamente e ser perdido permanentemente.
+  \item A perda de capacidade \textbf{acelera dramaticamente} --- a bateria
+    entra na fase de queda r\'{a}pida observada nas curvas de degrada\c{c}\~ao.
+\end{enumerate}
+
+Conforme articulado pelos autores com base em Ans\'ean et al.\ (2016, 2017):
+o LAM$_\text{deNE}$ \'{e} proposto como mecanismo principal de degrada\c{c}\~ao
+precoce que, em conjunto com a perda de invent\'{a}rio de l\'{i}tio (LLI),
+\'{e} amplamente observado em c\'{e}lulas LFP/grafite comerciais operadas em
+condi\c{c}\~oes similares.
+
+\subsection{Perda de Invent\'{a}rio de L\'{i}tio (LLI)}
+
+Al\'{e}m do LAM$_\text{deNE}$, os autores identificam a \textbf{perda de invent\'{a}rio
+de l\'{i}tio} (LLI, \textit{Loss of Lithium Inventory}) como modo concorrente:
+
+\begin{itemize}
+  \item O LLI ocorre quando \'{i}ons de l\'{i}tio s\~ao sequestrados em rea\c{c}\~oes
+    paralelas irrecuper\'{a}veis, como o crescimento da camada SEI
+    (\textit{solid-electrolyte interphase}) na superf\'{i}cie do grafite.
+  \item O LLI reduz o invent\'{a}rio de l\'{i}tio ciclavel na c\'{e}lula, podendo
+    eventualmente tornar a capacidade do positivo o fator limitante de
+    uma forma diferente.
+  \item Os autores afirmam que \textbf{LAM$_\text{deNE}$ e LLI operam
+    concorrentemente} nos ciclos diagn\'{o}sticos (C/10) analisados, consistente
+    com a literatura para LFP/grafite.
+\end{itemize}
+
+\subsection{Evid\^{e}ncia Experimental: Ciclos Diagn\'{o}sticos a C/10}
+
+Para confirmar que esses mecanismos est\~ao presentes, os autores realizaram
+experimentos adicionais com tr\^{e}s pol\'{i}ticas de carga distintas (4C, 6C e 8C)
+incluindo \textbf{ciclos diagn\'{o}sticos a C/10} nos ciclos 1, 100 e fim de vida.
+A taxa lenta (C/10 = carregar em 10 horas) revela a termodin\^{a}mica intr\'{i}nseca
+dos materiais, sem os efeitos cin\'{e}ticos da carga r\'{a}pida.
+
+Derivadas das curvas diagn\'{o}sticas (dQ/dV e dV/dQ) foram comparadas entre
+os ciclos 1, 100 e fim de vida. Os autores observam \textbf{deslocamentos de picos}
+nessas derivadas que:
+
+\begin{itemize}
+  \item S\~ao consistentes com LAM$_\text{deNE}$ e LLI operando simultaneamente.
+  \item Aumentam em magnitude com a taxa de carga (maior em 8C do que em 4C).
+  \item Est\~ao presentes j\'{a} entre o ciclo 1 e o ciclo 100, antes da queda
+    de capacidade observ\'{a}vel.
+\end{itemize}
+
+\subsection{Conectando a Eletroqu\'{i}mica ao Modelo: por que a vari\^{a}ncia funciona}
+
+Aqui est\'{a} o elo central entre a eletroqu\'{i}mica e o modelo de dados:
+
+\begin{enumerate}
+  \item LAM$_\text{deNE}$ desloca os potenciais em que o l\'{i}tio \'{e} armazenado
+    no grafite, sem mudar a capacidade total. Esse deslocamento \'{e} \textbf{n\~ao
+    uniforme ao longo da faixa de voltagem}: ele afeta certas plat\^os
+    cristalinos do grafite de forma diferenciada.
+  \item Isso faz com que $\Delta Q_{100-10}(V)$ n\~ao seja uma constante --- \'{e}
+    uma curva que sobe e desce ao longo da faixa de voltagem.
+  \item Uma curva que sobe e desce tem \textbf{alta vari\^{a}ncia}. Uma bateria
+    que n\~ao est\'{a} degradando tem $\Delta Q_{100-10}(V)$ quase plana e,
+    portanto, baixa vari\^{a}ncia.
+  \item Consequentemente, a vari\^{a}ncia de $\Delta Q_{100-10}(V)$ \'{e} um
+    indicador precoce de qu\~ao intensamente o LAM$_\text{deNE}$ est\'{a} operando,
+    o que prediz a rapidez com que a bateria ir\'{a} eventualmente degradar.
+\end{enumerate}
+
+Conforme colocam os autores: ``\textit{LAMdeNE alters a fraction of, rather
+than the entire, discharge voltage curve, consistent with the strong correlation
+between the variance of $\Delta Q(V)$ and cycle life}''.
+
+\begin{destaque}[A contribui\c{c}\~ao estimada do LAM ao sinal]
+Os autores estimam que modos de degrada\c{c}\~ao de baixa taxa como o LAM$_\text{deNE}$
+contribuem com \textbf{50--80\%} do sinal em $\Delta Q(V)$. O restante (20--50\%)
+\'{e} atribu\'{i}do a modos cin\'{e}ticos (que ocorrem mais fortemente na descarga r\'{a}pida).
+Essa estimativa est\'{a} descrita na Nota Suplementar 6 do artigo.
+\end{destaque}
+
+\subsection{Por que n\~ao usar dQ/dV ou dV/dQ diretamente?}
+
+Uma abordagem cl\'{a}ssica de diagn\'{o}stico de baterias usa as derivadas dQ/dV
+e dV/dQ para identificar mecanismos de degrada\c{c}\~ao. Por que os autores n\~ao
+usaram essa abordagem?
+
+\begin{enumerate}
+  \item As derivadas dQ/dV e dV/dQ s\'{o} revelam mecanismos limpamente a
+    \textbf{baixas taxas de descarga} (C/10 ou menos). A taxas r\'{a}pidas (4C),
+    os efeitos cin\'{e}ticos ``borr\~ao'' os picos, tornando a interpreta\c{c}\~ao
+    amb\'{i}gua.
+  \item Ciclos diagn\'{o}sticos a C/10 \textbf{interrompem a trajet\'{o}ria de
+    degrada\c{c}\~ao}: a taxa lenta permite uma recupera\c{c}\~ao tempor\'{a}ria de
+    capacidade, alterando artificialmente a curva de degrada\c{c}\~ao.
+  \item A diferencia\c{c}\~ao num\'{e}rica amplifica o ru\'{i}do.
+\end{enumerate}
+
+A solu\c{c}\~ao proposta pelo artigo --- aplicar estat\'{i}sticas de resumo sobre
+$\Delta Q(V)$ a 4C --- evita simultaneamente os tr\^{e}s problemas acima,
+sem requerer ciclos diagn\'{o}sticos especiais.
+
+%===========================================================================
+\section{Discuss\~ao Geral e Li\c{c}\~oes Aprendidas}
+
+\subsection{O que torna esse trabalho relevante?}
+
+\begin{enumerate}
+  \item \textbf{Dataset p\'{u}blico de grande escala:} os autores afirmam que,
+    ao momento da publica\c{c}\~ao, seu dataset era o maior publicado para baterias
+    comerciais nominalmente id\^{e}nticas em condi\c{c}\~oes controladas ($\sim$96.700
+    ciclos de 124 c\'{e}lulas). Isso foi essencial para o sucesso dos modelos.
+
+  \item \textbf{Previs\~ao antes da degrada\c{c}\~ao:} a maioria dos trabalhos anteriores
+    exigia que a bateria j\'{a} tivesse degradado pelo menos 25\% antes de fazer
+    previs\~oes com precis\~ao similar. Aqui, a previs\~ao \'{e} feita com uma
+    capacidade mediana de 0,2\% \textit{acima} da inicial.
+
+  \item \textbf{Interpretabilidade:} ao escolher um modelo linear, os autores
+    podem conectar cada coeficiente a uma explica\c{c}\~ao f\'{i}sica. O preditor
+    dominante (vari\^{a}ncia de $\Delta Q(V)$) tem uma interpreta\c{c}\~ao clara
+    ligada ao mecanismo LAM$_\text{deNE}$.
+
+  \item \textbf{Valida\c{c}\~ao rigorosa:} o uso de um conjunto de teste secund\'{a}rio
+    --- gerado ap\'{o}s o desenvolvimento do modelo, com pol\'{i}ticas de carga
+    distintas --- fornece confian\c{c}a real na generaliza\c{c}\~ao dos resultados.
+\end{enumerate}
+
+\subsection{Limita\c{c}\~oes Reconhecidas}
+
+\begin{itemize}
+  \item Os resultados s\~ao para LFP/grafite especificamente. Os autores observam
+    que o eletrodo negativo de grafite \'{e} comum \`{a} maioria das baterias comerciais,
+    tornando os resultados potencialmente transferentes, mas isso n\~ao foi
+    demonstrado explicitamente.
+  \item O dataset usa pol\'{i}ticas de carga constantes por ciclo. Baterias em
+    ve\'{i}culos el\'{e}tricos reais enfrentam perfis de uso altamente vari\'{a}veis.
+  \item O modelo \'{e} pontual: n\~ao fornece incerteza na previs\~ao.
+\end{itemize}
+
+%===========================================================================
+\section{Conclus\~oes}
+
+O artigo demonstra que:
+
+\begin{enumerate}
+  \item A \textbf{forma da curva de voltagem de descarga} carrega informa\c{c}\~ao
+    de degrada\c{c}\~ao muito antes da capacidade integrada.
+  \item A transforma\c{c}\~ao $\Delta Q(V)$ entre ciclos precoces captura essa
+    informa\c{c}\~ao de forma eficiente.
+  \item Um modelo linear com regulariza\c{c}\~ao (\textit{elastic net}),
+    treinado em apenas 41 c\'{e}lulas com dados de 100 ciclos,
+    atinge \textbf{erros de 7,5--10,7\%} na previs\~ao de vida \'{u}til.
+  \item Com apenas 5 ciclos, a classifica\c{c}\~ao bin\'{a}ria atinge \textbf{4,9\%
+    de erro m\'{e}dio}.
+  \item O sucesso do modelo \'{e} fundamentado na eletroqu\'{i}mica:
+    o mecanismo \textbf{LAM$_\text{deNE}$}, combinado com a perda de invent\'{a}rio
+    de l\'{i}tio, manifesta-se na curvatura da voltagem \textit{antes} de qualquer
+    queda de capacidade.
+\end{enumerate}
+
+\begin{destaque}[Para o seu projeto de inicia\c{c}\~ao cient\'{i}fica]
+Se voc\^{e} quer reproduzir ou extender esse trabalho, os tr\^{e}s blocos fundamentais
+s\~ao:
+\begin{enumerate}
+  \item \textbf{Processamento:} padronizar curvas de descarga em grade uniforme
+    de 1.000 pontos de voltagem via interpola\c{c}\~ao spline.
+  \item \textbf{Feature engineering:} calcular $\Delta Q_{100-10}(V)$ e extrair
+    sua vari\^{a}ncia (e m\'{i}nimo) em escala logar\'{i}tmica.
+  \item \textbf{Modelo:} aplicar \texttt{ElasticNetCV} do \texttt{scikit-learn}
+    com valida\c{c}\~ao cruzada para selecionar hiperpar\^{a}metros e coeficientes.
+\end{enumerate}
+O c\'{o}digo de processamento est\'{a} dispon\'{i}vel em
+\url{https://github.com/rdbraatz/data-driven-prediction-of-battery-cycle-life-before-capacity-degradation}.
+O c\'{o}digo de modelagem \'{e} dispon\'{i}vel mediante solicita\c{c}\~ao aos autores.
+\end{destaque}
+
+%===========================================================================
+\section*{Refer\^{e}ncia}
+
+K.A.\ Severson, P.M.\ Attia, N.\ Jin, N.\ Perkins, B.\ Jiang, Z.\ Yang,
+M.H.\ Chen, M.\ Aykol, P.K.\ Herring, D.\ Fraggedakis, M.Z.\ Bazant,
+S.J.\ Harris, W.C.\ Chueh, R.D.\ Braatz.\\
+\textit{Data-driven prediction of battery cycle life before capacity degradation.}\\
+\textbf{Nature Energy} 4, 383--391 (2019).\\
+\url{https://doi.org/10.1038/s41560-019-0356-8}
+
+\end{document}
